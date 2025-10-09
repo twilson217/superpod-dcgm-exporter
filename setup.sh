@@ -50,13 +50,6 @@ else
 fi
 echo ""
 
-# Check if running as root or with sudo
-if [ "$EUID" -eq 0 ]; then
-    echo "Warning: Running as root. This script should be run as a regular user with sudo access."
-    echo "Some operations will require sudo, which will be requested when needed."
-    echo ""
-fi
-
 # Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
