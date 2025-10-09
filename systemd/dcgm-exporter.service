@@ -1,0 +1,51 @@
+# NVIDIA DCGM Exporter Service for BCM-managed SuperPOD
+# This service runs DCGM exporter as a native system service
+# Compatible with BCM environments where nvidia-dcgm service is already running
+
+[Unit]
+Description=NVIDIA DCGM Exporter for Prometheus
+Documentation=https://github.com/NVIDIA/dcgm-exporter
+Wants=nvidia-dcgm.service
+After=network-online.target nvidia-dcgm.service
+Requires=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# Working directory
+WorkingDirectory=/var/lib/dcgm-exporter
+
+# Environment variables
+Environment="DCGM_EXPORTER_LISTEN=:9400"
+Environment="DCGM_HPC_JOB_MAPPING_DIR=/run/dcgm-job-map"
+
+# Start the DCGM exporter
+# -f: Specify the metrics configuration file (use default NVIDIA metrics)
+# --hpc-job-mapping-dir: Enable Slurm job labels in metrics
+ExecStart=/usr/local/bin/dcgm-exporter \
+    -f /etc/dcgm-exporter/default-counters.csv \
+    --hpc-job-mapping-dir /run/dcgm-job-map
+
+# Logging
+StandardOutput=append:/var/log/dcgm-exporter.log
+StandardError=append:/var/log/dcgm-exporter.log
+SyslogIdentifier=dcgm-exporter
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Resource limits
+LimitNOFILE=65536
+
+# Security settings (relaxed for GPU access)
+PrivateTmp=false
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
+

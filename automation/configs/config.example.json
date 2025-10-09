@@ -1,0 +1,38 @@
+{
+  "cluster_name": "slurm",
+  "bcm_headnode": "bcm-01",
+  "use_existing_prometheus": false,
+  "prometheus_server": "",
+  "prometheus_targets_dir": "/cm/shared/apps/dcgm-exporter/prometheus-targets",
+  "dcgm_exporter_port": 9400,
+  "hpc_job_mapping_dir": "/run/dcgm-job-map",
+  "dcgm_mode": "embedded",
+  "systems": {
+    "dgx_nodes": [
+      "dgx-01",
+      "dgx-02"
+    ],
+    "slurm_controller": "slurmctl",
+    "bcm_headnode": "bcm-01"
+  },
+  "deployment_options": {
+    "deploy_dcgm_exporter": true,
+    "deploy_slurm_prolog_epilog": true,
+    "deploy_bcm_role_monitor": true,
+    "configure_prometheus": false
+  },
+  "paths": {
+    "shared_base": "/cm/shared/apps/dcgm-exporter",
+    "prolog_shared": "/cm/shared/apps/slurm/var/cm",
+    "prolog_local": "/cm/local/apps/slurm/var/prologs",
+    "epilog_local": "/cm/local/apps/slurm/var/epilogs",
+    "dcgm_exporter_binary": "/usr/local/bin/dcgm-exporter",
+    "dcgm_exporter_config": "/etc/dcgm-exporter"
+  },
+  "service_settings": {
+    "dcgm_exporter_user": "root",
+    "restart_policy": "on-failure",
+    "restart_sec": 5
+  }
+}
+
