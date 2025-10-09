@@ -168,8 +168,7 @@ echo ""
 # Ask for deployment mode
 echo "=== Deployment Mode ==="
 echo "1) Full automated deployment (recommended)"
-echo "2) Dry-run (generate documentation without making changes)"
-echo "3) Resume previous deployment"
+echo "2) View documentation (no changes)"
 echo ""
 read -p "Select mode [1]: " MODE
 MODE=${MODE:-1}
@@ -194,15 +193,18 @@ source .venv/bin/activate
 case $MODE in
     1)
         echo "Running full automated deployment..."
-        python automation/guided_setup.py --config "$CONFIG_FILE"
+        python automation/role-monitor/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --verbose
         ;;
     2)
         echo "Running in dry-run mode..."
-        python automation/guided_setup.py --config "$CONFIG_FILE" --dry-run
+        echo "Note: Dry-run mode generates commands without executing."
+        echo "See docs/How-To-Guide.md for manual deployment steps."
+        exit 0
         ;;
     3)
         echo "Resuming previous deployment..."
-        python automation/guided_setup.py --config "$CONFIG_FILE" --resume
+        echo "Note: Resume is not implemented. Please run full deployment again."
+        python automation/role-monitor/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --verbose
         ;;
     *)
         echo "Invalid mode selected"
