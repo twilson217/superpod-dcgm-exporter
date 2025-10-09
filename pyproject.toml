@@ -5,24 +5,20 @@ description = "Automated deployment of NVIDIA DCGM Exporter for BCM-managed Supe
 authors = [
     {name = "NVIDIA", email = "support@nvidia.com"}
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "requests>=2.31.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4.0",
-    "black>=23.0.0",
-    "flake8>=6.0.0",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = []
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+    "black>=23.0.0",
+]
 
 [tool.black]
 line-length = 100
