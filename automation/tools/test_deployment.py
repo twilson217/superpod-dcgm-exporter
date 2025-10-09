@@ -602,17 +602,22 @@ class DCGMExporterTester:
 
 
 def main():
+    # Determine default config path relative to script location
+    script_dir = Path(__file__).parent
+    default_config = script_dir.parent / "configs" / "config.json"
+    
     parser = argparse.ArgumentParser(
         description="Test DCGM Exporter deployment on BCM-managed SuperPOD"
     )
     parser.add_argument(
         "--config",
-        help="Path to configuration JSON file"
+        default=str(default_config) if default_config.exists() else None,
+        help=f"Path to configuration JSON file (default: {default_config})"
     )
     parser.add_argument(
         "--dgx-nodes",
         nargs="+",
-        help="List of DGX nodes to test"
+        help="List of DGX nodes to test (overrides config file)"
     )
     parser.add_argument(
         "--export",
@@ -622,7 +627,8 @@ def main():
     args = parser.parse_args()
     
     if not args.config and not args.dgx_nodes:
-        parser.error("Must provide either --config or --dgx-nodes")
+        parser.error("Must provide either --config or --dgx-nodes. "
+                    f"Default config not found at: {default_config}")
     
     tester = DCGMExporterTester(args.config, args.dgx_nodes)
     success = tester.run_all_tests()

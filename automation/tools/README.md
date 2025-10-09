@@ -21,16 +21,17 @@ Comprehensive automated testing script that validates the entire DCGM exporter d
 
 ### Usage
 
-#### With Config File
+#### With Config File (Default)
 
 ```bash
-# Run all tests using config file
-python automation/tools/test_deployment.py --config automation/configs/config.json
+# Run all tests using default config (automation/configs/config.json)
+python automation/tools/test_deployment.py
 
 # Export results to JSON
-python automation/tools/test_deployment.py \
-    --config automation/configs/config.json \
-    --export test-results.json
+python automation/tools/test_deployment.py --export test-results.json
+
+# Use custom config file
+python automation/tools/test_deployment.py --config /path/to/custom-config.json
 ```
 
 #### With Command Line
@@ -224,23 +225,28 @@ ssh $NODE "ls /run/dcgm-job-map/"  # Should be empty or no file for GPU 0
 
 ### Examples
 
-**Quick test of one node:**
+**Quick test with default config:**
 ```bash
-python automation/tools/test_deployment.py --dgx-nodes dgx-01
+# Uses automation/configs/config.json automatically
+python automation/tools/test_deployment.py
+```
+
+**Test specific nodes (no config needed):**
+```bash
+python automation/tools/test_deployment.py --dgx-nodes dgx-01 dgx-02
 ```
 
 **Test all nodes and export:**
 ```bash
-python automation/tools/test_deployment.py \
-    --config automation/configs/config.json \
-    --export results.json
+# Uses default config
+python automation/tools/test_deployment.py --export results.json
 ```
 
-**Test specific nodes with custom config:**
+**Test with custom config:**
 ```bash
 python automation/tools/test_deployment.py \
     --config /path/to/custom-config.json \
-    --dgx-nodes dgx-01 dgx-02
+    --export results.json
 ```
 
 ### Adding Custom Tests
