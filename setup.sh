@@ -11,7 +11,43 @@ echo "=================================================="
 echo "DCGM Exporter on SuperPOD - Automated Deployment"
 echo "=================================================="
 echo ""
-echo "NOTE: This script should be run from a BCM headnode."
+
+# Check if running on a BCM headnode
+CURRENT_HOSTNAME=$(hostname -s)
+echo "Verifying BCM headnode requirement..."
+echo -n "Current hostname: $CURRENT_HOSTNAME ... "
+
+if command -v cmsh >/dev/null 2>&1; then
+    # Get list of BCM headnodes
+    BCM_HEADNODES=$(cmsh -c "device list --type headnode" 2>/dev/null | grep -i "headnode" | awk '{print $2}' | tr '\n' ' ')
+    
+    if echo "$BCM_HEADNODES" | grep -qw "$CURRENT_HOSTNAME"; then
+        echo "✓ Running on BCM headnode"
+    else
+        echo "✗ NOT a BCM headnode"
+        echo ""
+        echo "WARNING: This script should be run from a BCM headnode."
+        echo "Detected BCM headnodes: $BCM_HEADNODES"
+        echo "Current hostname: $CURRENT_HOSTNAME"
+        echo ""
+        read -p "Continue anyway? (yes/no) [no]: " CONTINUE_ANYWAY
+        if [[ ! "$CONTINUE_ANYWAY" =~ ^[Yy][Ee]?[Ss]?$ ]]; then
+            echo "Exiting. Please run this script from a BCM headnode."
+            exit 1
+        fi
+    fi
+else
+    echo "⚠ Cannot verify (cmsh not available)"
+    echo ""
+    echo "WARNING: cmsh command not found. Cannot verify if running on BCM headnode."
+    echo "This script should be run from a BCM headnode for proper functionality."
+    echo ""
+    read -p "Continue anyway? (yes/no) [no]: " CONTINUE_ANYWAY
+    if [[ ! "$CONTINUE_ANYWAY" =~ ^[Yy][Ee]?[Ss]?$ ]]; then
+        echo "Exiting."
+        exit 1
+    fi
+fi
 echo ""
 
 # Check if running as root or with sudo
