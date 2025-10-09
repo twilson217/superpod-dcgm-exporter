@@ -16,7 +16,7 @@ This project automates the deployment of NVIDIA's DCGM Exporter but does **not i
 
 **Deployment behavior**:
 ```python
-# From automation/role-monitor/deploy_dcgm_exporter.py
+# From automation/deploy_dcgm_exporter.py
 if dcgm_source.exists():
     # Development: Use local copy if present
     logger.info("Copying DCGM exporter source...")

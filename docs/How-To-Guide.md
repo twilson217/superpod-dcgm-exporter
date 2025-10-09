@@ -250,11 +250,11 @@ scp bcm-headnode:/root/.cm/cmsh/admin.* .
 
 ```bash
 # Deploy using automation script
-uv run python automation/role-monitor/deploy_dcgm_exporter.py \
+python automation/deploy_dcgm_exporter.py \
   --config automation/configs/config.json
 
 # Or deploy manually to specific nodes
-uv run python automation/role-monitor/deploy_dcgm_exporter.py \
+python automation/deploy_dcgm_exporter.py \
   --dgx-nodes dgx-01 dgx-02 dgx-03
 ```
 

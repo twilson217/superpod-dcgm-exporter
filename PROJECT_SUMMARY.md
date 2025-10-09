@@ -66,7 +66,7 @@ This project provides complete automation for deploying NVIDIA DCGM Exporter as 
   - Single JSON file per node
   - Configurable targets directory
 
-- ✅ **Deployment Script** (`automation/role-monitor/deploy_dcgm_exporter.py`)
+- ✅ **Deployment Script** (`automation/deploy_dcgm_exporter.py`)
   - Automated SSH-based deployment
   - Config file or CLI arguments
   - Multi-node deployment
@@ -159,7 +159,7 @@ superpod-dcgm-exporter/
 │   │   └── config.existing-prometheus.json
 │   ├── role-monitor/
 │   │   ├── bcm_role_monitor_dcgm.py # BCM role monitor
-│   │   └── deploy_dcgm_exporter.py  # Deployment automation
+│   ├── deploy_dcgm_exporter.py      # Main deployment automation
 │   ├── tools/                        # Future: validation tools
 │   └── logs/                         # Deployment logs
 │

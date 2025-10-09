@@ -21,14 +21,14 @@ From the project root:
 
 ### Deployment Scripts
 
-**`role-monitor/deploy_dcgm_exporter.py`** - Deploy to DGX nodes
+**`deploy_dcgm_exporter.py`** - Main deployment script for DGX nodes
 ```bash
 # Deploy to specific nodes
-uv run python automation/role-monitor/deploy_dcgm_exporter.py \
+python automation/deploy_dcgm_exporter.py \
   --dgx-nodes dgx-01 dgx-02
 
 # Deploy using config file
-uv run python automation/role-monitor/deploy_dcgm_exporter.py \
+python automation/deploy_dcgm_exporter.py \
   --config automation/configs/config.json
 ```
 
@@ -76,7 +76,7 @@ automation/
 │   └── config.existing-prometheus.json  # Existing Prometheus example
 ├── role-monitor/
 │   ├── bcm_role_monitor_dcgm.py  # Role monitoring service
-│   └── deploy_dcgm_exporter.py   # Deployment automation
+│   ├── deploy_dcgm_exporter.py   # Main deployment automation
 ├── tools/                         # Future: testing/validation scripts
 └── logs/                          # Deployment logs (generated)
 ```
@@ -109,7 +109,7 @@ automation/
 uv sync
 
 # Run deployment directly
-uv run python automation/role-monitor/deploy_dcgm_exporter.py \
+python automation/deploy_dcgm_exporter.py \
   --config automation/configs/config.json \
   --verbose
 ```

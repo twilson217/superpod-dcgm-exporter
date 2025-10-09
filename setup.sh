@@ -193,7 +193,7 @@ source .venv/bin/activate
 case $MODE in
     1)
         echo "Running full automated deployment..."
-        python automation/role-monitor/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --verbose
+        python automation/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --verbose
         ;;
     2)
         echo "Running in dry-run mode..."
@@ -204,7 +204,7 @@ case $MODE in
     3)
         echo "Resuming previous deployment..."
         echo "Note: Resume is not implemented. Please run full deployment again."
-        python automation/role-monitor/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --verbose
+        python automation/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --verbose
         ;;
     *)
         echo "Invalid mode selected"

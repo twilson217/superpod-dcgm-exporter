@@ -159,11 +159,11 @@ Import the official NVIDIA DCGM-Exporter dashboard:
 
 ```bash
 # Deploy to specific nodes
-uv run python automation/role-monitor/deploy_dcgm_exporter.py \
+python automation/deploy_dcgm_exporter.py \
     --dgx-nodes dgx-01 dgx-02
 
 # Deploy using config file
-uv run python automation/role-monitor/deploy_dcgm_exporter.py \
+python automation/deploy_dcgm_exporter.py \
     --config automation/configs/config.json
 ```
 
@@ -256,7 +256,7 @@ superpod-dcgm-exporter/
 │   │   └── config.existing-prometheus.json
 │   ├── role-monitor/
 │   │   ├── bcm_role_monitor_dcgm.py  # BCM role monitor
-│   │   └── deploy_dcgm_exporter.py   # Deployment script
+│   ├── deploy_dcgm_exporter.py       # Main deployment script
 │   └── logs/                         # Deployment logs
 ├── systemd/
 │   └── dcgm-exporter.service        # Systemd service file

@@ -23,7 +23,7 @@ class DCGMExporterDeployer:
     """Deploy DCGM Exporter to DGX nodes"""
     
     def __init__(self, config_path: Optional[str] = None, dgx_nodes: Optional[List[str]] = None):
-        self.project_root = Path(__file__).parent.parent.parent
+        self.project_root = Path(__file__).parent.parent
         
         if config_path:
             self.config = self._load_config(config_path)
@@ -156,9 +156,13 @@ class DCGMExporterDeployer:
             "systemctl daemon-reload"
         )
         
-        # Step 8: Enable but don't start (BCM role monitor will start it)
-        logger.info("Enabling DCGM exporter service...")
+        # Step 8: Enable and start the service
+        logger.info("Enabling and starting DCGM exporter service...")
         self.ssh_command(node, "systemctl enable dcgm-exporter")
+        self.ssh_command(node, "systemctl start dcgm-exporter")
+        
+        # Verify service started
+        self.ssh_command(node, "systemctl is-active dcgm-exporter")
         
         logger.info(f"✓ Successfully deployed DCGM exporter to {node}")
     
@@ -199,19 +203,49 @@ class DCGMExporterDeployer:
         )
         
         logger.info("✓ Prolog/Epilog scripts deployed to shared storage")
+        
+        # Create symlinks on all DGX nodes
         logger.info("")
-        logger.info("Next steps:")
-        logger.info("1. Create symlinks on all nodes that run Slurm jobs:")
-        logger.info(f"   ln -sf {prolog_shared}/prolog-dcgm.sh "
-                   f"/cm/local/apps/slurm/var/prologs/60-prolog-dcgm.sh")
-        logger.info(f"   ln -sf {prolog_shared}/epilog-dcgm.sh "
-                   f"/cm/local/apps/slurm/var/epilogs/60-epilog-dcgm.sh")
+        logger.info("Creating symlinks on DGX nodes...")
+        for node in self.dgx_nodes:
+            logger.info(f"  Creating symlinks on {node}...")
+            
+            # Ensure local prolog/epilog directories exist
+            self.ssh_command(node, "mkdir -p /cm/local/apps/slurm/var/prologs")
+            self.ssh_command(node, "mkdir -p /cm/local/apps/slurm/var/epilogs")
+            
+            # Create symlinks
+            self.ssh_command(
+                node,
+                f"ln -sf {prolog_shared}/prolog-dcgm.sh "
+                f"/cm/local/apps/slurm/var/prologs/60-prolog-dcgm.sh"
+            )
+            self.ssh_command(
+                node,
+                f"ln -sf {prolog_shared}/epilog-dcgm.sh "
+                f"/cm/local/apps/slurm/var/epilogs/60-epilog-dcgm.sh"
+            )
+            logger.info(f"  ✓ Symlinks created on {node}")
+        
+        logger.info("✓ Prolog/Epilog symlinks deployed to all nodes")
     
     def deploy_all(self):
         """Deploy to all configured nodes"""
         logger.info("Starting DCGM Exporter deployment")
         logger.info(f"Target nodes: {', '.join(self.dgx_nodes)}")
         logger.info("")
+        
+        # Create Prometheus targets directory on BCM headnode
+        prometheus_targets_dir = self.config.get("prometheus_targets_dir")
+        if prometheus_targets_dir:
+            logger.info(f"Creating Prometheus targets directory: {prometheus_targets_dir}")
+            bcm_headnode = self.config.get("bcm_headnode", "localhost")
+            try:
+                self.ssh_command(bcm_headnode, f"mkdir -p {prometheus_targets_dir}")
+                self.ssh_command(bcm_headnode, f"chmod 755 {prometheus_targets_dir}")
+                logger.info(f"✓ Created {prometheus_targets_dir}")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to create Prometheus targets directory: {e}")
         
         # Deploy to each DGX node
         for node in self.dgx_nodes:
@@ -239,12 +273,17 @@ class DCGMExporterDeployer:
 
 
 def main():
+    # Determine default config path relative to script location
+    script_dir = Path(__file__).parent
+    default_config = script_dir / "configs" / "config.json"
+    
     parser = argparse.ArgumentParser(
         description="Deploy DCGM Exporter to DGX nodes"
     )
     parser.add_argument(
         "--config",
-        help="Path to configuration file"
+        default=str(default_config) if default_config.exists() else None,
+        help=f"Path to configuration file (default: {default_config})"
     )
     parser.add_argument(
         "--dgx-nodes",
@@ -263,7 +302,8 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
     
     if not args.config and not args.dgx_nodes:
-        parser.error("Must provide either --config or --dgx-nodes")
+        parser.error("Must provide either --config or --dgx-nodes. "
+                    f"Default config not found at: {default_config}")
     
     deployer = DCGMExporterDeployer(args.config, args.dgx_nodes)
     deployer.deploy_all()
