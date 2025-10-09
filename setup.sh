@@ -11,6 +11,8 @@ echo "=================================================="
 echo "DCGM Exporter on SuperPOD - Automated Deployment"
 echo "=================================================="
 echo ""
+echo "NOTE: This script should be run from a BCM headnode."
+echo ""
 
 # Check if running as root or with sudo
 if [ "$EUID" -eq 0 ]; then
@@ -22,6 +24,26 @@ fi
 # Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Function to auto-detect BCM headnode hostname
+detect_bcm_headnode() {
+    # Check if cmsh is available
+    if ! command_exists cmsh; then
+        echo ""
+        return 1
+    fi
+    
+    # Run cmsh command and extract hostname
+    local headnode=$(cmsh -c "device list --type headnode" 2>/dev/null | grep -i "headnode" | awk '{print $2}' | head -n 1)
+    
+    if [ -n "$headnode" ]; then
+        echo "$headnode"
+        return 0
+    else
+        echo ""
+        return 1
+    fi
 }
 
 # Check for required system tools
@@ -80,9 +102,17 @@ if [ ! -f "$CONFIG_FILE" ]; then
         echo "=== Basic Configuration Setup ==="
         echo ""
         
-        # Get BCM headnode
-        read -p "Enter BCM headnode hostname [bcm-01]: " BCM_HEADNODE
-        BCM_HEADNODE=${BCM_HEADNODE:-bcm-01}
+        # Auto-detect BCM headnode
+        echo "Detecting BCM headnode..."
+        BCM_HEADNODE=$(detect_bcm_headnode)
+        if [ -n "$BCM_HEADNODE" ]; then
+            echo "✓ Detected BCM headnode: $BCM_HEADNODE"
+        else
+            echo "⚠ Could not auto-detect BCM headnode (is cmsh available?)"
+            read -p "Enter BCM headnode hostname [bcm-01]: " BCM_HEADNODE
+            BCM_HEADNODE=${BCM_HEADNODE:-bcm-01}
+        fi
+        echo ""
         
         # Get DGX nodes
         read -p "Enter DGX node hostnames (comma-separated) [dgx-01]: " DGX_NODES

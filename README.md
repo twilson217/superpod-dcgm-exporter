@@ -27,6 +27,7 @@ This project provides automation to deploy DCGM Exporter as a **native system se
 ### Prerequisites
 
 - BCM-managed SuperPOD with Slurm
+- **Run from a BCM headnode** (the script auto-detects the headnode using `cmsh`)
 - NVIDIA DGX nodes with GPUs
 - Passwordless SSH access to all nodes
 - Python 3.8+ on the deployment machine
@@ -59,7 +60,7 @@ The setup script will:
 
 During setup, you'll be asked:
 
-- **BCM headnode hostname** - Your BCM head node
+- **BCM headnode hostname** - Auto-detected using `cmsh` (or prompted if detection fails)
 - **DGX nodes** - Comma-separated list of DGX nodes
 - **Slurm controller** - Your Slurm controller node
 - **Existing Prometheus?** - Whether you have an existing Prometheus server

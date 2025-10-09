@@ -13,6 +13,7 @@ Follow the prompts to configure and deploy.
 ## What You'll Need
 
 - BCM-managed SuperPOD with Slurm
+- **Run from a BCM headnode** (auto-detects headnode)
 - Passwordless SSH to DGX nodes
 - 5 minutes
 
@@ -22,7 +23,7 @@ When prompted:
 
 | Question | Example Answer |
 |----------|----------------|
-| BCM headnode | `bcm-01` |
+| BCM headnode | Auto-detected (or prompted if needed) |
 | DGX nodes | `dgx-01,dgx-02,dgx-03` |
 | Slurm controller | `slurmctl` |
 | Existing Prometheus? | `no` (or `yes` + hostname) |
