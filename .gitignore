@@ -13,6 +13,7 @@ env/
 venv/
 .venv/
 ENV/
+*.pyc
 build/
 develop-eggs/
 dist/
