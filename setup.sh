@@ -181,18 +181,28 @@ echo ""
 # Launch Python automation
 cd "$SCRIPT_DIR"
 
+# Install dependencies if not already done
+if [ ! -d ".venv" ]; then
+    echo "Installing Python dependencies..."
+    uv venv
+    uv pip install -r <(echo "requests>=2.31.0")
+fi
+
+# Activate virtual environment and run
+source .venv/bin/activate
+
 case $MODE in
     1)
         echo "Running full automated deployment..."
-        uv run python automation/guided_setup.py --config "$CONFIG_FILE"
+        python automation/guided_setup.py --config "$CONFIG_FILE"
         ;;
     2)
         echo "Running in dry-run mode..."
-        uv run python automation/guided_setup.py --config "$CONFIG_FILE" --dry-run
+        python automation/guided_setup.py --config "$CONFIG_FILE" --dry-run
         ;;
     3)
         echo "Resuming previous deployment..."
-        uv run python automation/guided_setup.py --config "$CONFIG_FILE" --resume
+        python automation/guided_setup.py --config "$CONFIG_FILE" --resume
         ;;
     *)
         echo "Invalid mode selected"
@@ -201,6 +211,9 @@ case $MODE in
 esac
 
 EXIT_CODE=$?
+
+# Deactivate virtual environment
+deactivate
 
 echo ""
 if [ $EXIT_CODE -eq 0 ]; then
