@@ -9,6 +9,8 @@ import json
 import logging
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -159,10 +161,34 @@ class DCGMExporterDeployer:
         # Step 8: Enable and start the service
         logger.info("Enabling and starting DCGM exporter service...")
         self.ssh_command(node, "systemctl enable dcgm-exporter")
-        self.ssh_command(node, "systemctl start dcgm-exporter")
+        
+        # Restart service to ensure clean start
+        self.ssh_command(node, "systemctl restart dcgm-exporter", check=False)
+        
+        # Wait a moment for service to start
+        time.sleep(2)
         
         # Verify service started
-        self.ssh_command(node, "systemctl is-active dcgm-exporter")
+        result = self.ssh_command(node, "systemctl is-active dcgm-exporter", check=False)
+        if result.returncode == 0:
+            logger.info(f"✓ DCGM Exporter service is active on {node}")
+        else:
+            logger.warning(f"⚠ DCGM Exporter service may not be running on {node}")
+            # Show service status for debugging
+            status_result = self.ssh_command(node, "systemctl status dcgm-exporter", check=False)
+            logger.debug(f"Service status:\n{status_result.stdout}")
+        
+        # Verify metrics endpoint
+        dcgm_port = self.config.get("dcgm_exporter_port", 9400)
+        metrics_test = self.ssh_command(
+            node, 
+            f"curl -s http://localhost:{dcgm_port}/metrics | head -5",
+            check=False
+        )
+        if metrics_test.returncode == 0 and "DCGM" in metrics_test.stdout:
+            logger.info(f"✓ Metrics endpoint responding on {node}:{dcgm_port}")
+        else:
+            logger.warning(f"⚠ Metrics endpoint may not be ready on {node}:{dcgm_port}")
         
         logger.info(f"✓ Successfully deployed DCGM exporter to {node}")
     
@@ -229,13 +255,20 @@ class DCGMExporterDeployer:
         
         logger.info("✓ Prolog/Epilog symlinks deployed to all nodes")
     
-    def deploy_all(self):
-        """Deploy to all configured nodes"""
-        logger.info("Starting DCGM Exporter deployment")
-        logger.info(f"Target nodes: {', '.join(self.dgx_nodes)}")
-        logger.info("")
+    def deploy_bcm_role_monitor(self):
+        """Deploy BCM role monitor to all DGX nodes"""
+        logger.info(f"{'=' * 60}")
+        logger.info("Deploying BCM Role Monitor")
+        logger.info(f"{'=' * 60}")
         
-        # Create Prometheus targets directory on BCM headnode
+        # Discover BCM headnodes
+        logger.info("Discovering BCM headnodes...")
+        bcm_headnodes = self._discover_bcm_headnodes()
+        if not bcm_headnodes:
+            logger.error("No BCM headnodes discovered. BCM role monitor requires BCM headnodes.")
+            return
+        
+        # Create shared Prometheus targets directory
         prometheus_targets_dir = self.config.get("prometheus_targets_dir")
         if prometheus_targets_dir:
             logger.info(f"Creating Prometheus targets directory: {prometheus_targets_dir}")
@@ -246,6 +279,139 @@ class DCGMExporterDeployer:
                 logger.info(f"✓ Created {prometheus_targets_dir}")
             except subprocess.CalledProcessError as e:
                 logger.error(f"Failed to create Prometheus targets directory: {e}")
+        
+        # Get BCM certificates from headnode
+        logger.info("Retrieving BCM admin certificates...")
+        bcm_headnode = bcm_headnodes[0]
+        
+        # Copy certificates from BCM headnode to local temp
+        cert_path = "/root/admin.pem"
+        key_path = "/root/admin.key"
+        
+        try:
+            subprocess.run(
+                ["scp", "-o", "StrictHostKeyChecking=no", 
+                 f"{bcm_headnode}:{cert_path}", "/tmp/admin.pem"],
+                check=True, capture_output=True
+            )
+            subprocess.run(
+                ["scp", "-o", "StrictHostKeyChecking=no",
+                 f"{bcm_headnode}:{key_path}", "/tmp/admin.key"],
+                check=True, capture_output=True
+            )
+            logger.info("✓ Retrieved BCM admin certificates")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to retrieve BCM certificates: {e}")
+            logger.error("Make sure /root/admin.pem and /root/admin.key exist on BCM headnode")
+            return
+        
+        # Deploy to each DGX node
+        for node in self.dgx_nodes:
+            logger.info(f"Deploying BCM role monitor to {node}...")
+            try:
+                self._deploy_bcm_role_monitor_to_node(node, bcm_headnodes, prometheus_targets_dir)
+                logger.info(f"✓ Deployed BCM role monitor to {node}")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to deploy BCM role monitor to {node}: {e}")
+                continue
+        
+        # Cleanup local temp files
+        Path("/tmp/admin.pem").unlink(missing_ok=True)
+        Path("/tmp/admin.key").unlink(missing_ok=True)
+        
+        logger.info("✓ BCM role monitor deployed to all nodes")
+    
+    def _discover_bcm_headnodes(self) -> List[str]:
+        """Discover BCM headnodes using cmsh"""
+        try:
+            result = subprocess.run(
+                ['cmsh', '-c', 'device list --type headnode'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                headnodes = []
+                for line in result.stdout.strip().split('\n'):
+                    line = line.strip()
+                    if line and 'headnode' in line.lower():
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            hostname = parts[1]
+                            if hostname:
+                                headnodes.append(hostname)
+                return headnodes
+        except Exception as e:
+            logger.warning(f"Failed to discover BCM headnodes: {e}")
+        
+        return []
+    
+    def _deploy_bcm_role_monitor_to_node(self, node: str, bcm_headnodes: List[str], prometheus_targets_dir: str):
+        """Deploy BCM role monitor to a single node"""
+        # Create config
+        config = {
+            "bcm_headnodes": bcm_headnodes,
+            "bcm_port": 8081,
+            "cert_path": "/etc/bcm-role-monitor-dcgm/admin.pem",
+            "key_path": "/etc/bcm-role-monitor-dcgm/admin.key",
+            "check_interval": 60,
+            "retry_interval": 600,
+            "max_retries": 3,
+            "prometheus_targets_dir": prometheus_targets_dir or "/cm/shared/apps/dcgm-exporter/prometheus-targets",
+            "dcgm_exporter_port": self.config.get("dcgm_exporter_port", 9400),
+            "cluster_name": self.config.get("cluster_name", "slurm")
+        }
+        
+        # Write config to temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f, indent=2)
+            config_temp = f.name
+        
+        try:
+            # Create directories
+            self.ssh_command(node, "mkdir -p /etc/bcm-role-monitor-dcgm")
+            self.ssh_command(node, "mkdir -p /var/lib/bcm-role-monitor-dcgm")
+            
+            # Copy config
+            self.copy_file(Path(config_temp), node, "/etc/bcm-role-monitor-dcgm/config.json")
+            
+            # Copy certificates
+            self.copy_file(Path("/tmp/admin.pem"), node, "/etc/bcm-role-monitor-dcgm/admin.pem")
+            self.copy_file(Path("/tmp/admin.key"), node, "/etc/bcm-role-monitor-dcgm/admin.key")
+            self.ssh_command(node, "chmod 600 /etc/bcm-role-monitor-dcgm/admin.pem")
+            self.ssh_command(node, "chmod 600 /etc/bcm-role-monitor-dcgm/admin.key")
+            
+            # Copy monitor script
+            monitor_script = self.project_root / "automation" / "role-monitor" / "bcm_role_monitor.py"
+            self.copy_file(monitor_script, node, "/usr/local/bin/bcm_role_monitor_dcgm.py")
+            self.ssh_command(node, "chmod +x /usr/local/bin/bcm_role_monitor_dcgm.py")
+            
+            # Copy and install systemd service
+            service_file = self.project_root / "automation" / "role-monitor" / "bcm-role-monitor-dcgm.service"
+            self.copy_file(service_file, node, "/tmp/bcm-role-monitor-dcgm.service")
+            self.ssh_command(node, "mv /tmp/bcm-role-monitor-dcgm.service /etc/systemd/system/")
+            
+            # Enable and start service
+            self.ssh_command(node, "systemctl daemon-reload")
+            self.ssh_command(node, "systemctl enable bcm-role-monitor-dcgm")
+            self.ssh_command(node, "systemctl restart bcm-role-monitor-dcgm")
+            
+            # Verify service started
+            time.sleep(2)
+            result = self.ssh_command(node, "systemctl is-active bcm-role-monitor-dcgm", check=False)
+            if result.returncode == 0:
+                logger.info(f"  ✓ BCM role monitor service is active on {node}")
+            else:
+                logger.warning(f"  ⚠ BCM role monitor service may not be running on {node}")
+        finally:
+            Path(config_temp).unlink()
+    
+    def deploy_all(self):
+        """Deploy to all configured nodes"""
+        logger.info("Starting DCGM Exporter deployment")
+        logger.info(f"Target nodes: {', '.join(self.dgx_nodes)}")
+        logger.info("")
         
         # Deploy to each DGX node
         for node in self.dgx_nodes:
@@ -265,6 +431,19 @@ class DCGMExporterDeployer:
                     self.deploy_prolog_epilog(slurm_controller)
                 except subprocess.CalledProcessError as e:
                     logger.error(f"Failed to deploy prolog/epilog: {e}")
+        
+        # Deploy BCM role monitor (manages Prometheus targets dynamically)
+        logger.info("")
+        deploy_bcm_role_monitor_option = self.config.get("deployment_options", {}).get("deploy_bcm_role_monitor", True)
+        if deploy_bcm_role_monitor_option:
+            try:
+                self.deploy_bcm_role_monitor()
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to deploy BCM role monitor: {e}")
+            except Exception as e:
+                logger.error(f"Error deploying BCM role monitor: {e}")
+        else:
+            logger.info("Skipping BCM role monitor deployment (disabled in config)")
         
         logger.info("")
         logger.info("=" * 60)

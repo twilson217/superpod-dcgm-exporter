@@ -1,0 +1,30 @@
+[Unit]
+Description=BCM Role Monitor for DCGM Exporter
+After=network.target network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /usr/local/bin/bcm_role_monitor_dcgm.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bcm-role-monitor-dcgm
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/bcm-role-monitor-dcgm /var/log /etc/bcm-role-monitor-dcgm /cm/shared/apps/dcgm-exporter/prometheus-targets
+PrivateTmp=true
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+
