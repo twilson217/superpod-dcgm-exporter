@@ -485,6 +485,154 @@ class DCGMExporterDeployer:
         logger.info("✓ Initial Prometheus targets created")
         logger.info("  Note: BCM role monitor will manage these dynamically going forward")
     
+    def deploy_prometheus(self):
+        """Deploy Prometheus server with DCGM exporter scrape config"""
+        logger.info(f"{'=' * 60}")
+        logger.info("Deploying Prometheus Server")
+        logger.info(f"{'=' * 60}")
+        
+        prometheus_server = self.config.get("prometheus_server")
+        if not prometheus_server:
+            logger.error("No Prometheus server specified in configuration")
+            return
+        
+        prometheus_port = self.config.get("prometheus_port", 9090)
+        prometheus_targets_dir = self.config.get("prometheus_targets_dir", "/cm/shared/apps/dcgm-exporter/prometheus-targets")
+        shared_base = "/cm/shared/apps/prometheus"
+        
+        logger.info(f"Deploying Prometheus to: {prometheus_server}")
+        logger.info("")
+        
+        # Step 1: Install Prometheus
+        logger.info("Installing Prometheus...")
+        install_commands = f"""
+            # Create directories
+            mkdir -p {shared_base}/{{bin,config,data}}
+            
+            # Download and install Prometheus
+            cd /tmp
+            PROM_VERSION="2.48.0"
+            wget -q https://github.com/prometheus/prometheus/releases/download/v${{PROM_VERSION}}/prometheus-${{PROM_VERSION}}.linux-amd64.tar.gz
+            tar -xzf prometheus-${{PROM_VERSION}}.linux-amd64.tar.gz
+            
+            # Install binaries
+            cp prometheus-${{PROM_VERSION}}.linux-amd64/prometheus {shared_base}/bin/
+            cp prometheus-${{PROM_VERSION}}.linux-amd64/promtool {shared_base}/bin/
+            chmod +x {shared_base}/bin/{{prometheus,promtool}}
+            
+            # Copy console files
+            cp -r prometheus-${{PROM_VERSION}}.linux-amd64/consoles {shared_base}/
+            cp -r prometheus-${{PROM_VERSION}}.linux-amd64/console_libraries {shared_base}/
+            
+            # Cleanup
+            rm -rf prometheus-${{PROM_VERSION}}.linux-amd64*
+        """
+        
+        try:
+            self.ssh_command(prometheus_server, install_commands.strip())
+            logger.info("✓ Prometheus installed")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to install Prometheus: {e}")
+            return
+        
+        # Step 2: Create Prometheus configuration
+        logger.info("Creating Prometheus configuration...")
+        cluster_name = self.config.get("cluster_name", "slurm")
+        
+        prometheus_config = f"""
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: '{cluster_name}'
+    monitor: 'dcgm-exporter'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:{prometheus_port}']
+  
+  - job_name: 'dcgm-exporter'
+    file_sd_configs:
+      - files:
+          - '{prometheus_targets_dir}/*.json'
+        refresh_interval: 30s
+"""
+        
+        # Write config to temp file and copy
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yml', delete=False) as f:
+            f.write(prometheus_config)
+            temp_config = f.name
+        
+        try:
+            self.copy_file(Path(temp_config), prometheus_server, f"{shared_base}/config/prometheus.yml")
+            logger.info("✓ Prometheus configuration created")
+        finally:
+            Path(temp_config).unlink()
+        
+        # Step 3: Create systemd service
+        logger.info("Creating Prometheus systemd service...")
+        
+        service_content = f"""[Unit]
+Description=Prometheus Monitoring System
+Documentation=https://prometheus.io/docs/introduction/overview/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart={shared_base}/bin/prometheus \\
+  --config.file={shared_base}/config/prometheus.yml \\
+  --storage.tsdb.path={shared_base}/data \\
+  --web.console.templates={shared_base}/consoles \\
+  --web.console.libraries={shared_base}/console_libraries \\
+  --web.listen-address=0.0.0.0:{prometheus_port}
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=prometheus
+
+[Install]
+WantedBy=multi-user.target
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.service', delete=False) as f:
+            f.write(service_content)
+            temp_service = f.name
+        
+        try:
+            self.copy_file(Path(temp_service), prometheus_server, "/tmp/prometheus.service")
+            self.ssh_command(
+                prometheus_server,
+                "mv /tmp/prometheus.service /etc/systemd/system/ && systemctl daemon-reload"
+            )
+            logger.info("✓ Prometheus systemd service created")
+        finally:
+            Path(temp_service).unlink()
+        
+        # Step 4: Enable and start Prometheus
+        logger.info("Starting Prometheus service...")
+        self.ssh_command(prometheus_server, "systemctl enable prometheus")
+        self.ssh_command(prometheus_server, "systemctl restart prometheus")
+        
+        # Wait and verify
+        time.sleep(3)
+        result = self.ssh_command(prometheus_server, "systemctl is-active prometheus", check=False)
+        if result.returncode == 0 and result.stdout.strip() == "active":
+            logger.info(f"✓ Prometheus service is active on {prometheus_server}")
+            logger.info(f"  Access Prometheus at: http://{prometheus_server}:{prometheus_port}")
+        else:
+            logger.error(f"✗ Prometheus service failed to start on {prometheus_server}")
+            status = self.ssh_command(prometheus_server, "systemctl status prometheus --no-pager", check=False)
+            logger.error(f"Service status:\n{status.stdout}")
+        
+        logger.info("")
+        logger.info("✓ Prometheus deployment complete")
+    
     def deploy_all(self):
         """Deploy to all configured nodes"""
         logger.info("Starting DCGM Exporter deployment")
@@ -516,6 +664,21 @@ class DCGMExporterDeployer:
             self.create_initial_prometheus_targets()
         except Exception as e:
             logger.error(f"Failed to create initial Prometheus targets: {e}")
+        
+        # Deploy Prometheus if requested
+        logger.info("")
+        deploy_prometheus_option = self.config.get("deployment_options", {}).get("deploy_prometheus", False)
+        if deploy_prometheus_option:
+            try:
+                self.deploy_prometheus()
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to deploy Prometheus: {e}")
+            except Exception as e:
+                logger.error(f"Error deploying Prometheus: {e}")
+        elif self.config.get("use_existing_prometheus", False):
+            logger.info("Using existing Prometheus server - skipping Prometheus deployment")
+        else:
+            logger.info("Prometheus deployment not configured")
         
         # Deploy BCM role monitor (manages Prometheus targets dynamically going forward)
         logger.info("")

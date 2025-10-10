@@ -119,64 +119,71 @@ else
 fi
 echo ""
 
-# Check if config.json exists
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo "Configuration file not found: $CONFIG_FILE"
+# Function to collect configuration
+collect_configuration() {
     echo ""
-    echo "Would you like to create a basic configuration file? (yes/no)"
-    read -r CREATE_CONFIG
+    echo "=== Configuration Setup ==="
+    echo ""
     
-    if [[ "$CREATE_CONFIG" =~ ^[Yy][Ee]?[Ss]?$ ]]; then
-        echo ""
-        echo "=== Basic Configuration Setup ==="
-        echo ""
-        
-        # Auto-detect BCM headnode
-        echo "Detecting BCM headnode..."
-        BCM_HEADNODE=$(detect_bcm_headnode)
-        if [ -n "$BCM_HEADNODE" ]; then
-            echo "✓ Detected BCM headnode: $BCM_HEADNODE"
-        else
-            echo "⚠ Could not auto-detect BCM headnode (is cmsh available?)"
-            read -p "Enter BCM headnode hostname [bcm-01]: " BCM_HEADNODE
-            BCM_HEADNODE=${BCM_HEADNODE:-bcm-01}
-        fi
-        echo ""
-        
-        # Get DGX nodes
-        read -p "Enter DGX node hostnames (comma-separated) [dgx-01]: " DGX_NODES
-        DGX_NODES=${DGX_NODES:-dgx-01}
-        
-        # Get Slurm controller
-        read -p "Enter Slurm controller hostname [slurmctl]: " SLURM_CONTROLLER
-        SLURM_CONTROLLER=${SLURM_CONTROLLER:-slurmctl}
-        
-        # Ask about Prometheus
-        echo ""
-        echo "Do you have an existing Prometheus server? (yes/no) [no]"
-        read -r HAS_PROMETHEUS
-        if [[ "$HAS_PROMETHEUS" =~ ^[Yy][Ee]?[Ss]?$ ]]; then
-            USE_EXISTING_PROMETHEUS="true"
-            read -p "Enter existing Prometheus server hostname: " PROMETHEUS_SERVER
-            read -p "Enter Prometheus targets directory [/cm/shared/apps/prometheus/targets]: " PROMETHEUS_TARGETS_DIR
-            PROMETHEUS_TARGETS_DIR=${PROMETHEUS_TARGETS_DIR:-/cm/shared/apps/prometheus/targets}
-        else
-            USE_EXISTING_PROMETHEUS="false"
-            PROMETHEUS_SERVER=""
-            PROMETHEUS_TARGETS_DIR="/cm/shared/apps/dcgm-exporter/prometheus-targets"
-        fi
-        
-        # Create config directory
-        mkdir -p "$(dirname "$CONFIG_FILE")"
-        
-        # Generate config.json
-        cat > "$CONFIG_FILE" <<EOF
+    # Auto-detect BCM headnode
+    echo "Detecting BCM headnode..."
+    BCM_HEADNODE=$(detect_bcm_headnode)
+    if [ -n "$BCM_HEADNODE" ]; then
+        echo "✓ Detected BCM headnode: $BCM_HEADNODE"
+    else
+        echo "⚠ Could not auto-detect BCM headnode (is cmsh available?)"
+        read -p "Enter BCM headnode hostname [bcm-01]: " BCM_HEADNODE
+        BCM_HEADNODE=${BCM_HEADNODE:-bcm-01}
+    fi
+    echo ""
+    
+    # Get DGX nodes
+    read -p "Enter DGX node hostnames (comma-separated) [dgx-01]: " DGX_NODES
+    DGX_NODES=${DGX_NODES:-dgx-01}
+    
+    # Get Slurm controller
+    read -p "Enter Slurm controller hostname [slurmctl]: " SLURM_CONTROLLER
+    SLURM_CONTROLLER=${SLURM_CONTROLLER:-slurmctl}
+    
+    # Ask about Prometheus
+    echo ""
+    echo "=== Prometheus Configuration ==="
+    echo "Choose one of the following options:"
+    echo "  1) Use existing Prometheus server"
+    echo "  2) Deploy new Prometheus server (automated)"
+    echo ""
+    read -p "Select option [2]: " PROM_OPTION
+    PROM_OPTION=${PROM_OPTION:-2}
+    
+    if [ "$PROM_OPTION" = "1" ]; then
+        USE_EXISTING_PROMETHEUS="true"
+        DEPLOY_PROMETHEUS="false"
+        read -p "Enter existing Prometheus server hostname: " PROMETHEUS_SERVER
+        read -p "Enter Prometheus targets directory [/cm/shared/apps/prometheus/targets]: " PROMETHEUS_TARGETS_DIR
+        PROMETHEUS_TARGETS_DIR=${PROMETHEUS_TARGETS_DIR:-/cm/shared/apps/prometheus/targets}
+    else
+        USE_EXISTING_PROMETHEUS="false"
+        DEPLOY_PROMETHEUS="true"
+        PROMETHEUS_SERVER=""
+        read -p "Enter hostname for new Prometheus server [$SLURM_CONTROLLER]: " PROMETHEUS_SERVER
+        PROMETHEUS_SERVER=${PROMETHEUS_SERVER:-$SLURM_CONTROLLER}
+        PROMETHEUS_TARGETS_DIR="/cm/shared/apps/dcgm-exporter/prometheus-targets"
+    fi
+    echo ""
+    
+    # Create config directory
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    
+    # Generate config.json
+    cat > "$CONFIG_FILE" <<EOF
 {
   "cluster_name": "slurm",
   "bcm_headnode": "$BCM_HEADNODE",
   "use_existing_prometheus": $USE_EXISTING_PROMETHEUS,
+  "deploy_prometheus": $DEPLOY_PROMETHEUS,
   "prometheus_server": "$PROMETHEUS_SERVER",
   "prometheus_targets_dir": "$PROMETHEUS_TARGETS_DIR",
+  "prometheus_port": 9090,
   "dcgm_exporter_port": 9400,
   "hpc_job_mapping_dir": "/run/dcgm-job-map",
   "systems": {
@@ -188,41 +195,60 @@ if [ ! -f "$CONFIG_FILE" ]; then
     "deploy_dcgm_exporter": true,
     "deploy_slurm_prolog_epilog": true,
     "deploy_bcm_role_monitor": true,
-    "configure_prometheus": false
+    "deploy_prometheus": $DEPLOY_PROMETHEUS
   }
 }
 EOF
-        echo ""
-        echo "✓ Configuration file created: $CONFIG_FILE"
-        echo ""
+    echo "✓ Configuration saved: $CONFIG_FILE"
+    echo ""
+}
+
+# Check if config.json exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Configuration file not found: $CONFIG_FILE"
+    echo ""
+    echo "Would you like to create a configuration file? (yes/no) [yes]"
+    read -r CREATE_CONFIG
+    CREATE_CONFIG=${CREATE_CONFIG:-yes}
+    
+    if [[ "$CREATE_CONFIG" =~ ^[Yy][Ee]?[Ss]?$ ]]; then
+        collect_configuration
     else
         echo ""
         echo "Please create a configuration file and try again."
         echo "You can use automation/configs/config.example.json as a template."
         exit 1
     fi
-fi
-
-echo "Using configuration: $CONFIG_FILE"
-echo ""
-
-# Show configuration summary
-echo "=== Configuration Summary ==="
-if command_exists jq && jq empty "$CONFIG_FILE" 2>/dev/null; then
-    jq -r '
-        "Cluster: \(.cluster_name)",
-        "BCM Headnode: \(.bcm_headnode)",
-        "DGX Nodes: \(.systems.dgx_nodes | join(", "))",
-        "Slurm Controller: \(.systems.slurm_controller)",
-        "Use Existing Prometheus: \(.use_existing_prometheus)",
-        (if .use_existing_prometheus then "Prometheus Server: \(.prometheus_server)" else empty end),
-        "Prometheus Targets Dir: \(.prometheus_targets_dir)",
-        "HPC Job Mapping Dir: \(.hpc_job_mapping_dir)"
-    ' "$CONFIG_FILE"
 else
-    cat "$CONFIG_FILE"
+    # Config exists - show it and ask to keep or change
+    echo "Found existing configuration: $CONFIG_FILE"
+    echo ""
+    echo "=== Current Configuration ==="
+    if command_exists jq && jq empty "$CONFIG_FILE" 2>/dev/null; then
+        jq -r '
+            "Cluster: \(.cluster_name)",
+            "BCM Headnode: \(.bcm_headnode)",
+            "DGX Nodes: \(.systems.dgx_nodes | join(", "))",
+            "Slurm Controller: \(.systems.slurm_controller)",
+            "Prometheus: \(if .deploy_prometheus then "Deploy new on \(.prometheus_server)" elif .use_existing_prometheus then "Use existing at \(.prometheus_server)" else "Not configured" end)",
+            "Prometheus Targets Dir: \(.prometheus_targets_dir)",
+            "HPC Job Mapping Dir: \(.hpc_job_mapping_dir)"
+        ' "$CONFIG_FILE"
+    else
+        cat "$CONFIG_FILE"
+    fi
+    echo ""
+    
+    read -p "[K]eep or [C]hange these values? [K]: " CONFIG_CHOICE
+    CONFIG_CHOICE=${CONFIG_CHOICE:-K}
+    
+    if [[ "$CONFIG_CHOICE" =~ ^[Cc]$ ]]; then
+        collect_configuration
+    else
+        echo "✓ Keeping existing configuration"
+        echo ""
+    fi
 fi
-echo ""
 
 # Ask for deployment mode
 echo "=== Deployment Mode ==="
@@ -283,11 +309,16 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "=================================================="
     echo ""
     echo "Next steps:"
-    echo "1. Check the deployment documentation: automation/logs/guided_setup_document.md"
-    echo "2. Verify DCGM exporter is running: ssh <dgx-node> 'systemctl status dcgm-exporter'"
-    echo "3. Test metrics endpoint: curl http://<dgx-node>:9400/metrics"
-    if grep -q '"use_existing_prometheus": false' "$CONFIG_FILE" 2>/dev/null; then
-        echo "4. Configure Prometheus to scrape DCGM exporter (see documentation)"
+    echo "1. Verify DCGM exporter is running: ssh <dgx-node> 'systemctl status dcgm-exporter'"
+    echo "2. Test metrics endpoint: curl http://<dgx-node>:9400/metrics"
+    if grep -q '"deploy_prometheus": true' "$CONFIG_FILE" 2>/dev/null; then
+        PROM_SERVER=$(jq -r '.prometheus_server // "prometheus-server"' "$CONFIG_FILE" 2>/dev/null)
+        echo "3. Access Prometheus: http://${PROM_SERVER}:9090"
+        echo "4. Verify DCGM targets in Prometheus: Status -> Targets"
+    elif grep -q '"use_existing_prometheus": true' "$CONFIG_FILE" 2>/dev/null; then
+        echo "3. Verify DCGM targets appear in your existing Prometheus server"
+    else
+        echo "3. Configure Prometheus to scrape DCGM exporter (see documentation)"
     fi
     echo "5. Import Grafana dashboard (grafana/dcgm-dashboard.json)"
     echo ""
@@ -296,7 +327,7 @@ else
     echo "Deployment encountered errors"
     echo "=================================================="
     echo ""
-    echo "Check the logs for details: automation/logs/"
+    echo "Check the logs for details."
     echo ""
     exit $EXIT_CODE
 fi
