@@ -24,7 +24,7 @@ Environment="DCGM_HPC_JOB_MAPPING_DIR=/run/dcgm-job-map"
 # Start the DCGM exporter
 # -f: Specify the metrics configuration file (use default NVIDIA metrics)
 # --hpc-job-mapping-dir: Enable Slurm job labels in metrics
-ExecStart=/usr/local/bin/dcgm-exporter \
+ExecStart=/usr/bin/dcgm-exporter \
     -f /etc/dcgm-exporter/default-counters.csv \
     --hpc-job-mapping-dir /run/dcgm-job-map
 

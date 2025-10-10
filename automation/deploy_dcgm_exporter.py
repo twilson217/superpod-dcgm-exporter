@@ -148,6 +148,11 @@ class DCGMExporterDeployer:
         self.ssh_command(node, f"mkdir -p {job_map_dir}")
         self.ssh_command(node, f"chmod 755 {job_map_dir}")
         
+        # Create working directory for the service
+        logger.info("Creating working directory for service...")
+        self.ssh_command(node, "mkdir -p /var/lib/dcgm-exporter")
+        self.ssh_command(node, "chmod 755 /var/lib/dcgm-exporter")
+        
         # Step 7: Install systemd service
         logger.info("Installing systemd service...")
         service_file = self.project_root / "systemd" / "dcgm-exporter.service"
@@ -163,32 +168,51 @@ class DCGMExporterDeployer:
         self.ssh_command(node, "systemctl enable dcgm-exporter")
         
         # Restart service to ensure clean start
+        logger.info("Restarting DCGM exporter service...")
         self.ssh_command(node, "systemctl restart dcgm-exporter", check=False)
         
-        # Wait a moment for service to start
-        time.sleep(2)
+        # Wait for service to start (give it more time)
+        logger.info("Waiting for service to start...")
+        time.sleep(5)
         
         # Verify service started
         result = self.ssh_command(node, "systemctl is-active dcgm-exporter", check=False)
-        if result.returncode == 0:
+        if result.returncode == 0 and result.stdout.strip() == "active":
             logger.info(f"✓ DCGM Exporter service is active on {node}")
         else:
-            logger.warning(f"⚠ DCGM Exporter service may not be running on {node}")
-            # Show service status for debugging
-            status_result = self.ssh_command(node, "systemctl status dcgm-exporter", check=False)
-            logger.debug(f"Service status:\n{status_result.stdout}")
+            logger.error(f"✗ DCGM Exporter service is NOT active on {node}")
+            # Show detailed service status for debugging
+            status_result = self.ssh_command(node, "systemctl status dcgm-exporter --no-pager", check=False)
+            logger.error(f"Service status output:\n{status_result.stdout}")
+            # Show journal logs
+            journal_result = self.ssh_command(node, "journalctl -u dcgm-exporter -n 50 --no-pager", check=False)
+            logger.error(f"Recent service logs:\n{journal_result.stdout}")
+            raise RuntimeError(f"DCGM Exporter service failed to start on {node}")
         
         # Verify metrics endpoint
         dcgm_port = self.config.get("dcgm_exporter_port", 9400)
-        metrics_test = self.ssh_command(
-            node, 
-            f"curl -s http://localhost:{dcgm_port}/metrics | head -5",
-            check=False
-        )
-        if metrics_test.returncode == 0 and "DCGM" in metrics_test.stdout:
-            logger.info(f"✓ Metrics endpoint responding on {node}:{dcgm_port}")
-        else:
-            logger.warning(f"⚠ Metrics endpoint may not be ready on {node}:{dcgm_port}")
+        logger.info("Verifying metrics endpoint...")
+        
+        # Try multiple times to give service time to be ready
+        for attempt in range(3):
+            metrics_test = self.ssh_command(
+                node, 
+                f"curl -s http://localhost:{dcgm_port}/metrics | head -20",
+                check=False
+            )
+            if metrics_test.returncode == 0 and "DCGM" in metrics_test.stdout:
+                logger.info(f"✓ Metrics endpoint responding on {node}:{dcgm_port}")
+                logger.debug(f"Sample metrics:\n{metrics_test.stdout[:500]}")
+                break
+            else:
+                if attempt < 2:
+                    logger.warning(f"⚠ Metrics endpoint not ready yet (attempt {attempt + 1}/3), waiting...")
+                    time.sleep(3)
+                else:
+                    logger.error(f"✗ Metrics endpoint failed to respond on {node}:{dcgm_port}")
+                    logger.error(f"Curl output: {metrics_test.stdout}")
+                    logger.error(f"Curl error: {metrics_test.stderr}")
+                    raise RuntimeError(f"DCGM Exporter metrics endpoint not responding on {node}")
         
         logger.info(f"✓ Successfully deployed DCGM exporter to {node}")
     
@@ -407,6 +431,60 @@ class DCGMExporterDeployer:
         finally:
             Path(config_temp).unlink()
     
+    def create_initial_prometheus_targets(self):
+        """Create initial Prometheus target files for immediate functionality"""
+        logger.info(f"{'=' * 60}")
+        logger.info("Creating Initial Prometheus Targets")
+        logger.info(f"{'=' * 60}")
+        
+        prometheus_targets_dir = self.config.get("prometheus_targets_dir")
+        if not prometheus_targets_dir:
+            logger.warning("No Prometheus targets directory configured, skipping")
+            return
+        
+        dcgm_port = self.config.get("dcgm_exporter_port", 9400)
+        cluster_name = self.config.get("cluster_name", "slurm")
+        
+        # Create directory on first node or slurm controller
+        target_node = self.config.get("systems", {}).get("slurm_controller") or self.dgx_nodes[0]
+        logger.info(f"Creating Prometheus targets directory on {target_node}...")
+        try:
+            self.ssh_command(target_node, f"mkdir -p {prometheus_targets_dir}")
+            self.ssh_command(target_node, f"chmod 755 {prometheus_targets_dir}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to create Prometheus targets directory: {e}")
+            return
+        
+        # Create individual target file for each node
+        logger.info("")
+        for node in self.dgx_nodes:
+            logger.info(f"Creating Prometheus target file for {node}...")
+            target_data = [{
+                "targets": [f"{node}:{dcgm_port}"],
+                "labels": {
+                    "job": "dcgm-exporter",
+                    "cluster": cluster_name,
+                    "hostname": node
+                }
+            }]
+            
+            # Create temp file locally
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(target_data, f, indent=2)
+                temp_file = f.name
+            
+            try:
+                # Copy to shared storage
+                target_file = f"{prometheus_targets_dir}/{node}.json"
+                self.copy_file(Path(temp_file), target_node, target_file)
+                logger.info(f"  ✓ Created {target_file}")
+            finally:
+                Path(temp_file).unlink()
+        
+        logger.info("")
+        logger.info("✓ Initial Prometheus targets created")
+        logger.info("  Note: BCM role monitor will manage these dynamically going forward")
+    
     def deploy_all(self):
         """Deploy to all configured nodes"""
         logger.info("Starting DCGM Exporter deployment")
@@ -432,7 +510,14 @@ class DCGMExporterDeployer:
                 except subprocess.CalledProcessError as e:
                     logger.error(f"Failed to deploy prolog/epilog: {e}")
         
-        # Deploy BCM role monitor (manages Prometheus targets dynamically)
+        # Create initial Prometheus targets for immediate functionality
+        logger.info("")
+        try:
+            self.create_initial_prometheus_targets()
+        except Exception as e:
+            logger.error(f"Failed to create initial Prometheus targets: {e}")
+        
+        # Deploy BCM role monitor (manages Prometheus targets dynamically going forward)
         logger.info("")
         deploy_bcm_role_monitor_option = self.config.get("deployment_options", {}).get("deploy_bcm_role_monitor", True)
         if deploy_bcm_role_monitor_option:

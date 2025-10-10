@@ -417,10 +417,10 @@ class DCGMExporterTester:
             )
             
             if file_count > 0:
-                # Check file format
+                # Check file format - read the first target file
                 returncode, stdout, stderr = self.ssh_command(
                     self.dgx_nodes[0] if self.dgx_nodes else "localhost",
-                    f"cat {self.prometheus_targets_dir}/*.json | head -1"
+                    f"cat {self.prometheus_targets_dir}/*.json 2>/dev/null | head -c 1000"
                 )
                 
                 try:
@@ -430,11 +430,11 @@ class DCGMExporterTester:
                         True,
                         "Valid JSON format"
                     )
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
                     self.add_result(
                         "Target file format",
                         False,
-                        "Invalid JSON format",
+                        f"Invalid JSON format: {str(e)}",
                         stdout[:200]
                     )
                     all_passed = False
