@@ -578,16 +578,19 @@ ls -la /cm/shared/apps/slurm/var/cm/epilog-dcgm.sh
 To update DCGM Exporter on all nodes:
 
 ```bash
-# 1. Update the reference node (dgx-01)
-ssh dgx-01
-cd /opt/dcgm-exporter-deployment/dcgm-exporter
-git pull
-make binary && make install
-systemctl restart dcgm-exporter
+# 1. Re-deploy to reference node (dgx-01) with latest version
+./setup.sh
+# Select only dgx-01 as target
+
+# This will automatically:
+# - Clone latest dcgm-exporter from GitHub
+# - Build and install the updated version
+# - Restart the service
+# - Clean up temporary files
 
 # 2. Verify update
-dcgm-exporter --version
-systemctl status dcgm-exporter
+ssh dgx-01 "dcgm-exporter --version"
+ssh dgx-01 "systemctl status dcgm-exporter"
 
 # 3. Capture new image
 cmsh -c 'device; use dgx-01; grabimage -w'

@@ -190,6 +190,8 @@ For air-gapped environments:
 
 3. The deployment script will automatically detect and use the local copy instead of cloning from GitHub.
 
+**Note**: After successful deployment, temporary build directories are automatically cleaned up to save disk space.
+
 ### Updating Dependencies
 
 **Update DCGM Exporter to Latest Version:**
@@ -197,12 +199,11 @@ For air-gapped environments:
 # Re-run deployment to get the latest version
 ./setup.sh
 
-# Or manually on a node
-ssh dgx-01
-cd /opt/dcgm-exporter-deployment/dcgm-exporter
-git pull
-make binary && make install
-systemctl restart dcgm-exporter
+# This will:
+# 1. Clone the latest dcgm-exporter from GitHub
+# 2. Build and install the updated version
+# 3. Restart the service
+# 4. Clean up temporary files
 ```
 
 **Update Python Dependencies:**

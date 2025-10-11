@@ -215,14 +215,14 @@ class DCGMExporterDeployer:
                     logger.error(f"Curl error: {metrics_test.stderr}")
                     raise RuntimeError(f"DCGM Exporter metrics endpoint not responding on {node}")
         
-        # Cleanup: Remove cloned repository (binary and config are already installed)
+        # Cleanup: Remove entire deployment directory (binary and config are already installed)
         logger.info("Cleaning up temporary files...")
         self.ssh_command(
             node,
-            "rm -rf /opt/dcgm-exporter-deployment/dcgm-exporter",
+            "rm -rf /opt/dcgm-exporter-deployment",
             check=False  # Don't fail if already removed
         )
-        logger.info("✓ Temporary repository removed")
+        logger.info("✓ Temporary deployment directory removed")
         
         logger.info(f"✓ Successfully deployed DCGM exporter to {node}")
     
