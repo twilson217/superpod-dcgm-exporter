@@ -790,14 +790,23 @@ providers:
                 self.ssh_command(grafana_server, "mkdir -p /var/lib/grafana/dashboards")
                 self.copy_file(Path(temp_provisioning), grafana_server, "/etc/grafana/provisioning/dashboards/dcgm.yaml")
                 
-                # Copy dashboard
+                # Copy default DCGM dashboard from nvidia repo
                 self.copy_file(dashboard_source, grafana_server, "/var/lib/grafana/dashboards/dcgm-exporter-dashboard.json")
+                logger.info("✓ Default DCGM dashboard imported")
+                
+                # Copy single-job dashboard from project
+                single_job_dashboard = self.project_root / "grafana" / "dcgm-single-job-stats.json"
+                if single_job_dashboard.exists():
+                    self.copy_file(single_job_dashboard, grafana_server, "/var/lib/grafana/dashboards/dcgm-single-job-stats.json")
+                    logger.info("✓ Single Job Stats dashboard imported")
+                else:
+                    logger.warning("Single Job Stats dashboard not found in project grafana/ directory")
                 
                 # Fix permissions for Grafana user
                 self.ssh_command(grafana_server, "chown -R grafana:grafana /etc/grafana/provisioning/dashboards")
                 self.ssh_command(grafana_server, "chown -R grafana:grafana /var/lib/grafana/dashboards")
                 
-                logger.info("✓ DCGM dashboard imported")
+                logger.info("✓ DCGM dashboards imported")
             finally:
                 Path(temp_provisioning).unlink()
         else:
@@ -816,7 +825,8 @@ providers:
             logger.info(f"✓ Grafana service is active on {grafana_server}")
             logger.info(f"  Access Grafana at: http://{grafana_server}:{grafana_port}")
             logger.info(f"  Default credentials: admin / admin")
-            logger.info(f"  DCGM Dashboard: http://{grafana_server}:{grafana_port}/d/dcgm-exporter")
+            logger.info(f"  DCGM Dashboard: http://{grafana_server}:{grafana_port}/d/Oxed_c6Wz/nvidia-dcgm-exporter-dashboard")
+            logger.info(f"  Single Job Stats: http://{grafana_server}:{grafana_port}/d/dcgm-single-job/dcgm-single-job-stats")
         else:
             logger.error(f"✗ Grafana service failed to start on {grafana_server}")
             status = self.ssh_command(grafana_server, "systemctl status grafana-server --no-pager", check=False)
