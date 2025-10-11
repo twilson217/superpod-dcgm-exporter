@@ -655,6 +655,170 @@ WantedBy=multi-user.target
         logger.info("")
         logger.info("✓ Prometheus deployment complete")
     
+    def deploy_grafana(self):
+        """Deploy Grafana server with Prometheus datasource and DCGM dashboard"""
+        logger.info(f"{'=' * 60}")
+        logger.info("Deploying Grafana Server")
+        logger.info(f"{'=' * 60}")
+        
+        grafana_server = self.config.get("grafana_server")
+        if not grafana_server:
+            logger.error("No Grafana server specified in configuration")
+            return
+        
+        grafana_port = self.config.get("grafana_port", 3000)
+        prometheus_server = self.config.get("prometheus_server", "localhost")
+        prometheus_port = self.config.get("prometheus_port", 9090)
+        shared_base = "/cm/shared/apps/grafana"
+        
+        logger.info(f"Deploying Grafana to: {grafana_server}")
+        logger.info("")
+        
+        # Step 1: Install Grafana
+        logger.info("Installing Grafana...")
+        install_commands = f"""
+            # Install dependencies
+            apt-get update && apt-get install -y apt-transport-https software-properties-common wget
+            
+            # Add Grafana GPG key and repository
+            wget -q -O /usr/share/keyrings/grafana.key https://apt.grafana.com/gpg.key
+            echo "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main" | tee /etc/apt/sources.list.d/grafana.list
+            
+            # Install Grafana
+            apt-get update
+            apt-get install -y grafana
+        """
+        
+        try:
+            self.ssh_command(grafana_server, install_commands.strip())
+            logger.info("✓ Grafana installed")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to install Grafana: {e}")
+            return
+        
+        # Step 2: Configure Grafana
+        logger.info("Configuring Grafana...")
+        grafana_config = f"""
+[server]
+protocol = http
+http_port = {grafana_port}
+domain = {grafana_server}
+
+[security]
+admin_user = admin
+admin_password = admin
+
+[auth.anonymous]
+enabled = false
+
+[paths]
+provisioning = /etc/grafana/provisioning
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+            f.write(grafana_config)
+            temp_config = f.name
+        
+        try:
+            self.copy_file(Path(temp_config), grafana_server, "/tmp/grafana.ini")
+            self.ssh_command(grafana_server, "mv /tmp/grafana.ini /etc/grafana/grafana.ini")
+            logger.info("✓ Grafana configuration created")
+        finally:
+            Path(temp_config).unlink()
+        
+        # Step 3: Configure Prometheus datasource
+        logger.info("Configuring Prometheus datasource...")
+        datasource_config = f"""
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://{prometheus_server}:{prometheus_port}
+    isDefault: true
+    editable: false
+"""
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            f.write(datasource_config)
+            temp_datasource = f.name
+        
+        try:
+            self.ssh_command(grafana_server, "mkdir -p /etc/grafana/provisioning/datasources")
+            self.copy_file(Path(temp_datasource), grafana_server, "/etc/grafana/provisioning/datasources/prometheus.yaml")
+            logger.info("✓ Prometheus datasource configured")
+        finally:
+            Path(temp_datasource).unlink()
+        
+        # Step 4: Import DCGM dashboard from cloned dcgm-exporter repo
+        logger.info("Importing DCGM dashboard...")
+        
+        # Check if dcgm-exporter is available locally
+        dcgm_source = self.project_root / "dcgm-exporter"
+        dashboard_source = dcgm_source / "grafana" / "dcgm-exporter-dashboard.json"
+        
+        if dashboard_source.exists():
+            logger.info(f"Found DCGM dashboard at: {dashboard_source}")
+            
+            # Create dashboard provisioning config
+            dashboard_provisioning = """
+apiVersion: 1
+
+providers:
+  - name: 'DCGM Exporter'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+"""
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+                f.write(dashboard_provisioning)
+                temp_provisioning = f.name
+            
+            try:
+                # Create dashboard directory and copy provisioning config
+                self.ssh_command(grafana_server, "mkdir -p /etc/grafana/provisioning/dashboards")
+                self.ssh_command(grafana_server, "mkdir -p /var/lib/grafana/dashboards")
+                self.copy_file(Path(temp_provisioning), grafana_server, "/etc/grafana/provisioning/dashboards/dcgm.yaml")
+                
+                # Copy dashboard
+                self.copy_file(dashboard_source, grafana_server, "/var/lib/grafana/dashboards/dcgm-exporter-dashboard.json")
+                self.ssh_command(grafana_server, "chown -R grafana:grafana /var/lib/grafana/dashboards")
+                
+                logger.info("✓ DCGM dashboard imported")
+            finally:
+                Path(temp_provisioning).unlink()
+        else:
+            logger.warning("DCGM dashboard not found in dcgm-exporter repository")
+            logger.warning("Dashboard can be manually imported later from: https://github.com/NVIDIA/dcgm-exporter/tree/main/grafana")
+        
+        # Step 5: Enable and start Grafana
+        logger.info("Starting Grafana service...")
+        self.ssh_command(grafana_server, "systemctl enable grafana-server")
+        self.ssh_command(grafana_server, "systemctl restart grafana-server")
+        
+        # Wait and verify
+        time.sleep(5)
+        result = self.ssh_command(grafana_server, "systemctl is-active grafana-server", check=False)
+        if result.returncode == 0 and result.stdout.strip() == "active":
+            logger.info(f"✓ Grafana service is active on {grafana_server}")
+            logger.info(f"  Access Grafana at: http://{grafana_server}:{grafana_port}")
+            logger.info(f"  Default credentials: admin / admin")
+            logger.info(f"  DCGM Dashboard: http://{grafana_server}:{grafana_port}/d/dcgm-exporter")
+        else:
+            logger.error(f"✗ Grafana service failed to start on {grafana_server}")
+            status = self.ssh_command(grafana_server, "systemctl status grafana-server --no-pager", check=False)
+            logger.error(f"Service status:\n{status.stdout}")
+        
+        logger.info("")
+        logger.info("✓ Grafana deployment complete")
+    
     def deploy_all(self):
         """Deploy to all configured nodes"""
         logger.info("Starting DCGM Exporter deployment")
@@ -701,6 +865,21 @@ WantedBy=multi-user.target
             logger.info("Using existing Prometheus server - skipping Prometheus deployment")
         else:
             logger.info("Prometheus deployment not configured")
+        
+        # Deploy Grafana if requested
+        logger.info("")
+        deploy_grafana_option = self.config.get("deployment_options", {}).get("deploy_grafana", False)
+        if deploy_grafana_option:
+            try:
+                self.deploy_grafana()
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to deploy Grafana: {e}")
+            except Exception as e:
+                logger.error(f"Error deploying Grafana: {e}")
+        elif self.config.get("use_existing_grafana", False):
+            logger.info("Using existing Grafana server - skipping Grafana deployment")
+        else:
+            logger.info("Grafana deployment not configured")
         
         # Deploy BCM role monitor (manages Prometheus targets dynamically going forward)
         logger.info("")

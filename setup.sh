@@ -171,6 +171,32 @@ collect_configuration() {
     fi
     echo ""
     
+    # Ask about Grafana
+    echo "=== Grafana Configuration ==="
+    echo "Choose one of the following options:"
+    echo "  1) Use existing Grafana server"
+    echo "  2) Deploy new Grafana server (automated)"
+    echo "  3) Skip Grafana setup"
+    echo ""
+    read -p "Select option [2]: " GRAFANA_OPTION
+    GRAFANA_OPTION=${GRAFANA_OPTION:-2}
+    
+    if [ "$GRAFANA_OPTION" = "1" ]; then
+        USE_EXISTING_GRAFANA="true"
+        DEPLOY_GRAFANA="false"
+        read -p "Enter existing Grafana server hostname: " GRAFANA_SERVER
+    elif [ "$GRAFANA_OPTION" = "2" ]; then
+        USE_EXISTING_GRAFANA="false"
+        DEPLOY_GRAFANA="true"
+        read -p "Enter hostname for new Grafana server [$PROMETHEUS_SERVER]: " GRAFANA_SERVER
+        GRAFANA_SERVER=${GRAFANA_SERVER:-$PROMETHEUS_SERVER}
+    else
+        USE_EXISTING_GRAFANA="false"
+        DEPLOY_GRAFANA="false"
+        GRAFANA_SERVER=""
+    fi
+    echo ""
+    
     # Create config directory
     mkdir -p "$(dirname "$CONFIG_FILE")"
     
@@ -184,6 +210,10 @@ collect_configuration() {
   "prometheus_server": "$PROMETHEUS_SERVER",
   "prometheus_targets_dir": "$PROMETHEUS_TARGETS_DIR",
   "prometheus_port": 9090,
+  "use_existing_grafana": $USE_EXISTING_GRAFANA,
+  "deploy_grafana": $DEPLOY_GRAFANA,
+  "grafana_server": "$GRAFANA_SERVER",
+  "grafana_port": 3000,
   "dcgm_exporter_port": 9400,
   "hpc_job_mapping_dir": "/run/dcgm-job-map",
   "systems": {
@@ -195,7 +225,8 @@ collect_configuration() {
     "deploy_dcgm_exporter": true,
     "deploy_slurm_prolog_epilog": true,
     "deploy_bcm_role_monitor": true,
-    "deploy_prometheus": $DEPLOY_PROMETHEUS
+    "deploy_prometheus": $DEPLOY_PROMETHEUS,
+    "deploy_grafana": $DEPLOY_GRAFANA
   }
 }
 EOF
@@ -231,6 +262,7 @@ else
             "DGX Nodes: \(.systems.dgx_nodes | join(", "))",
             "Slurm Controller: \(.systems.slurm_controller)",
             "Prometheus: \(if .deploy_prometheus then "Deploy new on \(.prometheus_server)" elif .use_existing_prometheus then "Use existing at \(.prometheus_server)" else "Not configured" end)",
+            "Grafana: \(if .deploy_grafana then "Deploy new on \(.grafana_server)" elif .use_existing_grafana then "Use existing at \(.grafana_server)" else "Not configured" end)",
             "Prometheus Targets Dir: \(.prometheus_targets_dir)",
             "HPC Job Mapping Dir: \(.hpc_job_mapping_dir)"
         ' "$CONFIG_FILE"
@@ -311,16 +343,29 @@ if [ $EXIT_CODE -eq 0 ]; then
     echo "Next steps:"
     echo "1. Verify DCGM exporter is running: ssh <dgx-node> 'systemctl status dcgm-exporter'"
     echo "2. Test metrics endpoint: curl http://<dgx-node>:9400/metrics"
+    
+    STEP=3
     if grep -q '"deploy_prometheus": true' "$CONFIG_FILE" 2>/dev/null; then
         PROM_SERVER=$(jq -r '.prometheus_server // "prometheus-server"' "$CONFIG_FILE" 2>/dev/null)
-        echo "3. Access Prometheus: http://${PROM_SERVER}:9090"
-        echo "4. Verify DCGM targets in Prometheus: Status -> Targets"
+        echo "$STEP. Access Prometheus: http://${PROM_SERVER}:9090"
+        STEP=$((STEP+1))
+        echo "$STEP. Verify DCGM targets in Prometheus: Status -> Targets"
+        STEP=$((STEP+1))
     elif grep -q '"use_existing_prometheus": true' "$CONFIG_FILE" 2>/dev/null; then
-        echo "3. Verify DCGM targets appear in your existing Prometheus server"
-    else
-        echo "3. Configure Prometheus to scrape DCGM exporter (see documentation)"
+        echo "$STEP. Verify DCGM targets appear in your existing Prometheus server"
+        STEP=$((STEP+1))
     fi
-    echo "5. Import Grafana dashboard (grafana/dcgm-dashboard.json)"
+    
+    if grep -q '"deploy_grafana": true' "$CONFIG_FILE" 2>/dev/null; then
+        GRAFANA_SERVER=$(jq -r '.grafana_server // "grafana-server"' "$CONFIG_FILE" 2>/dev/null)
+        echo "$STEP. Access Grafana: http://${GRAFANA_SERVER}:3000 (admin/admin)"
+        STEP=$((STEP+1))
+        echo "$STEP. View DCGM dashboard: http://${GRAFANA_SERVER}:3000/d/dcgm-exporter"
+        STEP=$((STEP+1))
+    elif grep -q '"use_existing_grafana": true' "$CONFIG_FILE" 2>/dev/null; then
+        echo "$STEP. Import DCGM dashboard into your existing Grafana server"
+        STEP=$((STEP+1))
+    fi
     echo ""
 else
     echo "=================================================="
