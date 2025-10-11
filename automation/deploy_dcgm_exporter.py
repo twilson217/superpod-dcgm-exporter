@@ -24,8 +24,15 @@ logger = logging.getLogger(__name__)
 class DCGMExporterDeployer:
     """Deploy DCGM Exporter to DGX nodes"""
     
-    def __init__(self, config_path: Optional[str] = None, dgx_nodes: Optional[List[str]] = None):
+    def __init__(self, config_path: Optional[str] = None, dgx_nodes: Optional[List[str]] = None, dry_run: bool = False):
         self.project_root = Path(__file__).parent.parent
+        self.dry_run = dry_run
+        
+        if self.dry_run:
+            logger.info("=" * 60)
+            logger.info("DRY-RUN MODE - No commands will be executed")
+            logger.info("=" * 60)
+            logger.info("")
         
         if config_path:
             self.config = self._load_config(config_path)
@@ -65,12 +72,27 @@ class DCGMExporterDeployer:
     
     def ssh_command(self, node: str, command: str, check=True) -> subprocess.CompletedProcess:
         """Execute command on remote node via SSH"""
+        if self.dry_run:
+            logger.info(f"[DRY-RUN] ssh {node} '{command}'")
+            # Return a mock successful result for dry-run
+            result = subprocess.CompletedProcess(
+                args=["ssh", node, command],
+                returncode=0,
+                stdout="[dry-run output]",
+                stderr=""
+            )
+            return result
+        
         ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", node, command]
         logger.debug(f"Running on {node}: {command}")
         return subprocess.run(ssh_cmd, capture_output=True, text=True, check=check)
     
     def copy_file(self, local_path: Path, node: str, remote_path: str):
         """Copy file to remote node"""
+        if self.dry_run:
+            logger.info(f"[DRY-RUN] scp {local_path} {node}:{remote_path}")
+            return
+        
         scp_cmd = [
             "scp", "-o", "StrictHostKeyChecking=no",
             str(local_path), f"{node}:{remote_path}"
@@ -949,6 +971,11 @@ def main():
         action="store_true",
         help="Enable verbose logging"
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show commands without executing them"
+    )
     
     args = parser.parse_args()
     
@@ -959,7 +986,7 @@ def main():
         parser.error("Must provide either --config or --dgx-nodes. "
                     f"Default config not found at: {default_config}")
     
-    deployer = DCGMExporterDeployer(args.config, args.dgx_nodes)
+    deployer = DCGMExporterDeployer(args.config, args.dgx_nodes, dry_run=args.dry_run)
     deployer.deploy_all()
 
 

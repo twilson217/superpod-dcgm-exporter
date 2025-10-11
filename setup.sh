@@ -285,7 +285,7 @@ fi
 # Ask for deployment mode
 echo "=== Deployment Mode ==="
 echo "1) Full automated deployment (recommended)"
-echo "2) View documentation (no changes)"
+echo "2) Dry-run mode (show commands without executing)"
 echo ""
 read -p "Select mode [1]: " MODE
 MODE=${MODE:-1}
@@ -313,13 +313,14 @@ case $MODE in
         python automation/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --verbose
         ;;
     2)
-        echo "Documentation mode selected."
+        echo "Running in dry-run mode (showing commands without executing)..."
         echo ""
-        echo "For manual deployment instructions, see: docs/How-To-Guide.md"
-        echo "For project overview, see: README.md"
+        python automation/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --dry-run --verbose
         echo ""
-        echo "No changes will be made to your system."
-        exit 0
+        echo "Dry-run complete. No changes were made to your system."
+        echo ""
+        echo "To execute these commands, run: ./setup.sh and select mode 1"
+        echo "For manual deployment, see: docs/How-To-Guide.md"
         ;;
     3)
         echo "Resuming previous deployment..."
