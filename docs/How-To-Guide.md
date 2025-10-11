@@ -384,25 +384,217 @@ curl "http://prometheus:9090/api/v1/query?query=DCGM_FI_DEV_GPU_UTIL{hpcjob=\"$J
 
 ## BCM Imaging Workflow
 
-See [BCM-Imaging-Workflow.md](BCM-Imaging-Workflow.md) for complete instructions.
+BCM's imaging system allows you to capture the software configuration of a representative node and deploy it to many nodes efficiently. This is the recommended approach for scaling DCGM Exporter to large clusters.
 
-### Quick Reference
+### Benefits of BCM Imaging
+
+✅ **Fast Scaling** - Deploy to 100+ nodes in minutes  
+✅ **Consistency** - All nodes get identical configuration  
+✅ **Easy Maintenance** - Update one node, re-image others  
+✅ **Version Control** - Track software images over time  
+✅ **Rollback Capability** - Revert to previous images if needed  
+
+### Prerequisites
+
+- Working DCGM Exporter installation on representative node
+- BCM administrator access
+- `cmsh` module loaded
+- Understanding of BCM categories and software images
+
+### Phase 1: Deploy to Representative Node
+
+Deploy DCGM Exporter to one representative node first:
 
 ```bash
-# 1. Deploy to representative node
+# Deploy to first DGX node
 ./setup.sh
-# Deploy to dgx-01
+# Select dgx-01 as target
 
-# 2. Test thoroughly
+# Verify deployment
 ssh dgx-01 "systemctl status dcgm-exporter"
+ssh dgx-01 "curl -s http://localhost:9400/metrics | head -20"
 
-# 3. Capture image
+# Test with actual workload
+srun --nodelist=dgx-01 --gpus=1 nvidia-smi
+curl http://dgx-01:9400/metrics | grep hpc_job
+```
+
+### Phase 2: Capture Software Image
+
+Once verified, capture the node's software image:
+
+```bash
+# Load cmsh module
+source /etc/profile.d/modules.sh
 module load cmsh
+
+# Capture image from dgx-01
+cmsh -c 'device; use dgx-01; grabimage -w'
+```
+
+**What `grabimage -w` does:**
+- Creates a snapshot of the node's software configuration
+- Stores as a software image named after the node (e.g., "dgx-01")
+- Includes all installed packages, services, and configurations
+- `-w` flag waits for completion
+
+**Expected Output:**
+```
+Grabbing image for dgx-01...
+Image successfully grabbed.
+Software image 'dgx-01' is now available for deployment.
+```
+
+### Phase 3: Verify Image Contents
+
+```bash
+# List available software images
+cmsh -c 'softwareimage; list'
+
+# View details of captured image
+cmsh -c 'softwareimage; use dgx-01; show'
+
+# Check image includes dcgm components
+cmsh -c 'softwareimage; use dgx-01; show packages' | grep dcgm
+```
+
+### Phase 4: Deploy Image to Additional Nodes
+
+#### Option 1: Deploy to Individual Nodes
+
+```bash
+# Set software image for dgx-02
+cmsh -c 'device; use dgx-02; set softwareimage dgx-01; commit'
+
+# Reboot node to apply image
+cmsh -c 'device; use dgx-02; reboot'
+
+# Wait for node to come back up
+sleep 60
+cmsh -c 'device; use dgx-02; power'
+
+# Verify
+ssh dgx-02 "systemctl status dcgm-exporter"
+```
+
+#### Option 2: Deploy to Multiple Nodes via Category
+
+```bash
+# Deploy to all DGX nodes in a category
+cmsh -c 'category; use dgx; set softwareimage dgx-01; commit'
+
+# Reboot all nodes in category
+cmsh -c 'category; use dgx; foreach -c "reboot"'
+```
+
+#### Option 3: Deploy to Specific List
+
+```bash
+# Deploy to specific nodes
+for node in dgx-02 dgx-03 dgx-04; do
+  echo "Deploying to $node..."
+  cmsh -c "device; use $node; set softwareimage dgx-01; commit"
+  cmsh -c "device; use $node; reboot"
+done
+```
+
+### Phase 5: Post-Deployment Verification
+
+After nodes reboot, verify DCGM Exporter is running:
+
+```bash
+# Quick check on all nodes
+for node in dgx-02 dgx-03 dgx-04; do
+  echo "=== $node ==="
+  ssh $node "systemctl is-active dcgm-exporter" && echo "✓ Service running"
+  ssh $node "curl -s http://localhost:9400/metrics | grep -c ^DCGM_FI" && echo "✓ Metrics available"
+  echo ""
+done
+```
+
+### Phase 6: Prometheus Target Validation
+
+If using BCM role monitor, check that Prometheus target files are created:
+
+```bash
+# Check Prometheus targets directory
+ls -la /cm/shared/apps/dcgm-exporter/prometheus-targets/
+
+# Should see JSON files for each node:
+# dgx-01.json  dgx-02.json  dgx-03.json  dgx-04.json
+
+# Verify target file contents
+cat /cm/shared/apps/dcgm-exporter/prometheus-targets/dgx-02.json
+
+# Check in Prometheus UI
+# http://prometheus:9090/targets
+```
+
+### Troubleshooting Imaging Issues
+
+**Service not starting after imaging:**
+```bash
+# Check if systemd service was enabled
+ssh dgx-02 "systemctl is-enabled dcgm-exporter"
+
+# If disabled, enable it
+ssh dgx-02 "systemctl enable dcgm-exporter && systemctl start dcgm-exporter"
+
+# Check logs
+ssh dgx-02 "journalctl -u dcgm-exporter -n 50"
+```
+
+**Binary missing after imaging:**
+```bash
+# Verify binary exists
+ssh dgx-02 "ls -l /usr/bin/dcgm-exporter"
+
+# If missing, re-run deployment on that node
+./setup.sh
+# Select only dgx-02
+```
+
+**Job mapping not working:**
+```bash
+# Verify prolog/epilog symlinks
+ssh dgx-02 "ls -la /cm/local/apps/slurm/var/prologs/"
+ssh dgx-02 "ls -la /cm/local/apps/slurm/var/epilogs/"
+
+# Verify shared scripts exist
+ls -la /cm/shared/apps/slurm/var/cm/prolog-dcgm.sh
+ls -la /cm/shared/apps/slurm/var/cm/epilog-dcgm.sh
+```
+
+### Best Practices
+
+1. **Always test on one node first** - Verify everything works before imaging
+2. **Document your image version** - Track what's in each software image
+3. **Maintain a reference node** - Keep dgx-01 as the golden node for updates
+4. **Rolling updates** - Image a few nodes at a time, not all at once
+5. **Backup configurations** - Save your `config.json` before major changes
+
+### Updating Deployed Nodes
+
+To update DCGM Exporter on all nodes:
+
+```bash
+# 1. Update the reference node (dgx-01)
+ssh dgx-01
+cd /opt/dcgm-exporter-deployment/dcgm-exporter
+git pull
+make binary && make install
+systemctl restart dcgm-exporter
+
+# 2. Verify update
+dcgm-exporter --version
+systemctl status dcgm-exporter
+
+# 3. Capture new image
 cmsh -c 'device; use dgx-01; grabimage -w'
 
 # 4. Deploy to other nodes
-cmsh -c 'device; use dgx-02; set softwareimage dgx-01; commit'
-cmsh -c 'device; use dgx-03; set softwareimage dgx-01; commit'
+cmsh -c 'category; use dgx; set softwareimage dgx-01; commit'
+cmsh -c 'category; use dgx; foreach -c "reboot"'
 ```
 
 ## Next Steps

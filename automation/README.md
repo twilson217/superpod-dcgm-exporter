@@ -38,12 +38,6 @@ python automation/deploy_dcgm_exporter.py \
 - Handles Prometheus target files
 - Deployed automatically by setup.sh
 
-### Build Scripts
-
-**`../scripts/build_dcgm_exporter.sh`** - Build DCGM exporter
-- Called automatically during deployment
-- Can be run manually if needed
-
 ## Configuration Files
 
 ### `configs/config.example.json`

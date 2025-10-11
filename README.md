@@ -24,48 +24,70 @@ This project provides automation to deploy DCGM Exporter as a **native system se
 
 ## Quick Start
 
-### Prerequisites
-
-- BCM-managed SuperPOD with Slurm
-- **Run from a BCM headnode** (the script auto-detects the headnode using `cmsh`)
-- NVIDIA DGX nodes with GPUs
-- Passwordless SSH access to all nodes
-- Python 3.8+ on the deployment machine
-- Go compiler will be installed automatically if needed
-- Internet access on DGX nodes (to clone [NVIDIA/dcgm-exporter](https://github.com/NVIDIA/dcgm-exporter.git))
-
-### Basic Deployment
+Deploy DCGM Exporter to your SuperPOD in 5 minutes:
 
 ```bash
-# Clone this repository
-git clone <repo-url>
-cd superpod-dcgm-exporter
-
-# Run the setup script
+# One-command deployment
 ./setup.sh
 ```
 
-The setup script will:
-1. Install `uv` package manager if needed
-2. Guide you through configuration
-3. Launch automated deployment
-4. Clone [NVIDIA dcgm-exporter](https://github.com/NVIDIA/dcgm-exporter.git) on target nodes
-5. Build and deploy DCGM exporter to all DGX nodes
-6. Install Slurm prolog/epilog scripts
-7. Optionally deploy BCM role monitor
+### Prerequisites
 
-**Note**: The NVIDIA dcgm-exporter repository is cloned automatically during deployment and is not included in this project.
+| Requirement | Details |
+|------------|---------|
+| **Environment** | BCM-managed SuperPOD with Slurm |
+| **Location** | Run from a BCM headnode (auto-detected via `cmsh`) |
+| **Access** | Root or sudo access, passwordless SSH to DGX nodes |
+| **Software** | Python 3.9+ (will check), Go compiler (auto-installed) |
+| **Network** | Internet access on DGX nodes to clone [NVIDIA/dcgm-exporter](https://github.com/NVIDIA/dcgm-exporter.git) |
+| **Time** | ~5 minutes for first node, ~30 seconds per additional node |
+
+### What Gets Deployed
+
+The setup script will automatically:
+
+✅ **Install Dependencies** - `uv` package manager, Go compiler on DGX nodes  
+✅ **Clone DCGM Exporter** - From GitHub to `/opt/dcgm-exporter-deployment/` on each node  
+✅ **Build from Source** - Compile and install to `/usr/bin/dcgm-exporter`  
+✅ **Create Systemd Service** - Enable and start `dcgm-exporter.service`  
+✅ **Configure Job Mapping** - Create `/run/dcgm-job-map/` for HPC job tracking  
+✅ **Deploy Slurm Scripts** - Prolog/epilog scripts to `/cm/shared/` with symlinks  
+✅ **Optional: BCM Role Monitor** - Automatic service lifecycle management  
+✅ **Optional: Prometheus** - Deploy and configure Prometheus server  
+✅ **Optional: Grafana** - Deploy with dashboards and datasources  
 
 ### Configuration
 
-During setup, you'll be asked:
+During setup, you'll be prompted for:
 
-- **BCM headnode hostname** - Auto-detected using `cmsh` (or prompted if detection fails)
-- **DGX nodes** - Comma-separated list of DGX nodes
-- **Slurm controller** - Your Slurm controller node
-- **Existing Prometheus?** - Whether you have an existing Prometheus server
+| Setting | Description | Example |
+|---------|-------------|---------|
+| **BCM Headnode** | Auto-detected using `cmsh` | `bcm-headnode` |
+| **DGX Nodes** | Comma-separated list | `dgx-01,dgx-02,dgx-03` |
+| **Slurm Controller** | Your Slurm controller hostname | `slurmctl` |
+| **Prometheus** | Use existing, deploy new, or skip | Choose option |
+| **Grafana** | Use existing, deploy new, or skip | Choose option |
 
-Configuration is saved to `automation/configs/config.json` and can be modified later.
+Configuration is saved to `automation/configs/config.json` and can be reused or modified.
+
+### Quick Verification
+
+After deployment completes:
+
+```bash
+# Check service status
+ssh dgx-01 "systemctl status dcgm-exporter"
+
+# Test metrics endpoint
+curl http://dgx-01:9400/metrics | head -20
+
+# Submit GPU job and verify job labeling
+srun --gpus=1 nvidia-smi
+curl http://dgx-01:9400/metrics | grep hpc_job
+
+# Access Grafana (if deployed)
+# http://<grafana-server>:3000 (admin/admin)
+```
 
 ## Architecture
 
@@ -102,6 +124,92 @@ DCGM Exporter provides detailed GPU metrics including:
 - **HPC Jobs**: Slurm job IDs as metric labels (when configured)
 
 Default metrics configuration: `/etc/dcgm-exporter/default-counters.csv`
+
+## Dependencies
+
+### External Dependencies
+
+**NVIDIA DCGM Exporter** - This project **does not include** the dcgm-exporter source code.
+
+- **Source**: https://github.com/NVIDIA/dcgm-exporter
+- **License**: Apache 2.0 (compatible with this project)
+- **Deployment**: Automatically cloned from GitHub to `/opt/dcgm-exporter-deployment/dcgm-exporter` on each DGX node during deployment
+- **Why not included?**:
+  - Ensures you always get the latest version
+  - Clear separation of upstream and automation code
+  - Keeps this repository small and focused
+  - No license mixing concerns
+
+### System Dependencies
+
+These are automatically installed or already present:
+
+**On DGX Nodes:**
+- **Go compiler** (`golang-go`) - Auto-installed for building dcgm-exporter
+- **Git** - For cloning repositories
+- **NVIDIA Drivers** - Already present on DGX systems
+- **DCGM Libraries** - Already present (`nvidia-dcgm.service`)
+- **Systemd** - Service management
+
+**On Deployment Machine:**
+- **Python 3.9+** - For running automation scripts
+- **SSH** - For remote deployment
+- **uv** - Python package manager (auto-installed by `setup.sh`)
+
+### Python Dependencies
+
+Managed by `uv` via `pyproject.toml`:
+- `requests>=2.31.0` - For HTTP API calls (BCM, Prometheus, Grafana)
+
+Automatically installed when you run `./setup.sh`.
+
+### Network Dependencies
+
+**During Deployment:**
+- GitHub access to clone dcgm-exporter
+- APT package repositories for Go compiler and system packages
+- SSH access between deployment machine and DGX nodes
+
+**After Deployment:**
+- DGX nodes expose port 9400 for Prometheus scraping
+- BCM role monitor needs port 8081 access to BCM headnode (if enabled)
+
+### Offline Deployment
+
+For air-gapped environments:
+
+1. Pre-download dcgm-exporter and place in project root:
+   ```bash
+   git clone https://github.com/NVIDIA/dcgm-exporter.git
+   ```
+
+2. Pre-download Go packages:
+   ```bash
+   cd dcgm-exporter && go mod download
+   ```
+
+3. The deployment script will automatically detect and use the local copy instead of cloning from GitHub.
+
+### Updating Dependencies
+
+**Update DCGM Exporter to Latest Version:**
+```bash
+# Re-run deployment to get the latest version
+./setup.sh
+
+# Or manually on a node
+ssh dgx-01
+cd /opt/dcgm-exporter-deployment/dcgm-exporter
+git pull
+make binary && make install
+systemctl restart dcgm-exporter
+```
+
+**Update Python Dependencies:**
+```bash
+# Edit pyproject.toml if needed
+uv sync
+```
 
 ## Integration with Prometheus
 
@@ -252,13 +360,17 @@ superpod-dcgm-exporter/
 ├── pyproject.toml                    # Python dependencies (uv)
 ├── README.md                         # This file
 ├── automation/
+│   ├── deploy_dcgm_exporter.py      # Main deployment script
 │   ├── configs/
 │   │   ├── config.example.json      # Example configuration
 │   │   └── config.existing-prometheus.json
 │   ├── role-monitor/
-│   │   ├── bcm_role_monitor_dcgm.py  # BCM role monitor
-│   ├── deploy_dcgm_exporter.py       # Main deployment script
-│   └── logs/                         # Deployment logs
+│   │   ├── bcm_role_monitor.py      # BCM role monitor
+│   │   └── bcm-role-monitor-dcgm.service
+│   ├── tools/
+│   │   ├── test_deployment.py       # Automated testing
+│   │   └── README.md
+│   └── README.md                    # Automation documentation
 ├── systemd/
 │   └── dcgm-exporter.service        # Systemd service file
 ├── slurm/
@@ -266,11 +378,17 @@ superpod-dcgm-exporter/
 │   │   └── dcgm_job_map.sh          # Slurm prolog for job mapping
 │   └── epilog.d/
 │       └── dcgm_job_map.sh          # Slurm epilog for cleanup
-├── scripts/
-│   └── build_dcgm_exporter.sh       # Build script
-├── docs/
-│   └── prometheus-config-sample.yml  # Sample Prometheus config
-└── dcgm-exporter/                    # NVIDIA DCGM exporter source (git submodule or copy)
+├── grafana/
+│   ├── dcgm-single-job-stats.json   # Per-job dashboard
+│   └── README.md                    # Dashboard documentation
+└── docs/
+    ├── How-To-Guide.md              # Manual deployment guide
+    ├── Troubleshooting.md           # Problem solving
+    ├── DCGM-Compatibility.md        # Version information
+    └── prometheus-config-sample.yml # Sample Prometheus config
+
+# Note: dcgm-exporter/ directory (NVIDIA's source) is NOT included
+# It's automatically cloned during deployment to /opt/dcgm-exporter-deployment/
 ```
 
 ## Configuration Files
