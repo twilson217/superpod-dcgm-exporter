@@ -453,6 +453,144 @@ class DCGMExporterTester:
         
         return all_passed
     
+    def test_prometheus_scraping(self) -> bool:
+        """Test if Prometheus is scraping DCGM metrics"""
+        print(f"\n{Colors.BOLD}=== Testing Prometheus Scraping (Optional) ==={Colors.END}")
+        
+        # Check if Prometheus is configured
+        prometheus_server = self.config.get("prometheus_server")
+        prometheus_port = self.config.get("prometheus_port", 9090)
+        deploy_prometheus = self.config.get("deployment_options", {}).get("deploy_prometheus", False)
+        use_existing_prometheus = self.config.get("use_existing_prometheus", False)
+        
+        if not (deploy_prometheus or use_existing_prometheus) or not prometheus_server:
+            print(f"{Colors.YELLOW}Prometheus not configured - skipping scraping test{Colors.END}")
+            return True
+        
+        all_passed = True
+        
+        # Test 1: Check Prometheus is accessible
+        try:
+            import requests
+        except ImportError:
+            print(f"{Colors.YELLOW}Warning: requests module not available for Prometheus API testing{Colors.END}")
+            return True
+        
+        try:
+            # Test Prometheus health
+            health_url = f"http://{prometheus_server}:{prometheus_port}/-/healthy"
+            response = requests.get(health_url, timeout=5)
+            
+            prometheus_healthy = response.status_code == 200
+            self.add_result(
+                "Prometheus server health",
+                prometheus_healthy,
+                f"Status code: {response.status_code}" if prometheus_healthy else f"Failed with status {response.status_code}"
+            )
+            all_passed &= prometheus_healthy
+            
+            if not prometheus_healthy:
+                return all_passed
+            
+        except requests.exceptions.RequestException as e:
+            self.add_result(
+                "Prometheus server health",
+                False,
+                f"Cannot connect to Prometheus: {str(e)[:50]}"
+            )
+            return False
+        
+        # Test 2: Check DCGM exporter targets are discovered
+        try:
+            targets_url = f"http://{prometheus_server}:{prometheus_port}/api/v1/targets"
+            response = requests.get(targets_url, timeout=5)
+            
+            if response.status_code == 200:
+                data = response.json()
+                active_targets = data.get("data", {}).get("activeTargets", [])
+                
+                # Find DCGM exporter targets
+                dcgm_targets = [t for t in active_targets if t.get("labels", {}).get("job") == "dcgm-exporter"]
+                
+                targets_found = len(dcgm_targets) > 0
+                self.add_result(
+                    "DCGM exporter targets discovered",
+                    targets_found,
+                    f"Found {len(dcgm_targets)} target(s)" if targets_found else "No DCGM targets found"
+                )
+                all_passed &= targets_found
+                
+                if targets_found:
+                    # Test 3: Check target health
+                    healthy_count = sum(1 for t in dcgm_targets if t.get("health") == "up")
+                    all_healthy = healthy_count == len(dcgm_targets)
+                    
+                    self.add_result(
+                        "DCGM exporter targets healthy",
+                        all_healthy,
+                        f"{healthy_count}/{len(dcgm_targets)} targets up" if all_healthy else f"Only {healthy_count}/{len(dcgm_targets)} targets up"
+                    )
+                    all_passed &= all_healthy
+                    
+                    # Show unhealthy targets
+                    if not all_healthy:
+                        for target in dcgm_targets:
+                            if target.get("health") != "up":
+                                instance = target.get("labels", {}).get("instance", "unknown")
+                                error = target.get("lastError", "unknown error")
+                                print(f"      Unhealthy: {instance} - {error}")
+            else:
+                self.add_result(
+                    "DCGM exporter targets discovered",
+                    False,
+                    f"API error: status {response.status_code}"
+                )
+                all_passed = False
+                
+        except Exception as e:
+            self.add_result(
+                "DCGM exporter targets discovered",
+                False,
+                f"Error querying targets: {str(e)[:50]}"
+            )
+            all_passed = False
+        
+        # Test 4: Query for actual DCGM metrics
+        try:
+            # Query for a common DCGM metric
+            query_url = f"http://{prometheus_server}:{prometheus_port}/api/v1/query"
+            params = {"query": "DCGM_FI_DEV_GPU_TEMP"}
+            response = requests.get(query_url, params=params, timeout=5)
+            
+            if response.status_code == 200:
+                data = response.json()
+                result = data.get("data", {}).get("result", [])
+                
+                metrics_present = len(result) > 0
+                self.add_result(
+                    "DCGM metrics in Prometheus",
+                    metrics_present,
+                    f"Found {len(result)} GPU temperature metric(s)" if metrics_present else "No DCGM metrics found"
+                )
+                all_passed &= metrics_present
+            else:
+                self.add_result(
+                    "DCGM metrics in Prometheus",
+                    False,
+                    f"Query failed: status {response.status_code}"
+                )
+                all_passed = False
+                
+        except Exception as e:
+            self.add_result(
+                "DCGM metrics in Prometheus",
+                False,
+                f"Error querying metrics: {str(e)[:50]}"
+            )
+            all_passed = False
+        
+        return all_passed
+    
     def test_with_sample_job(self) -> bool:
         """Test job mapping with a sample Slurm job"""
         print(f"\n{Colors.BOLD}=== Testing with Sample Job (Optional) ==={Colors.END}")
@@ -534,6 +672,7 @@ class DCGMExporterTester:
             ("Job Mapping Setup", self.test_job_mapping_directory),
             ("Prolog/Epilog Scripts", self.test_prolog_epilog_scripts),
             ("Prometheus Targets", self.test_prometheus_targets),
+            ("Prometheus Scraping", self.test_prometheus_scraping),
             ("BCM Role Monitor", self.test_bcm_role_monitor),
             ("Sample Job Test", self.test_with_sample_job),
         ]
