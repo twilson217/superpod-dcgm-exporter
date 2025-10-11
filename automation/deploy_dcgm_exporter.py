@@ -115,9 +115,10 @@ class DCGMExporterDeployer:
             self.ssh_command(
                 node,
                 "cd /opt/dcgm-exporter-deployment && "
-                "tar -xzf dcgm-exporter.tar.gz"
+                "tar -xzf dcgm-exporter.tar.gz && "
+                "rm -f dcgm-exporter.tar.gz"  # Clean up remote tarball
             )
-            subprocess.run(["rm", "/tmp/dcgm-exporter.tar.gz"])
+            subprocess.run(["rm", "-f", "/tmp/dcgm-exporter.tar.gz"])  # Clean up local tarball
         else:
             logger.info("Cloning DCGM exporter from GitHub...")
             self.ssh_command(
@@ -213,6 +214,15 @@ class DCGMExporterDeployer:
                     logger.error(f"Curl output: {metrics_test.stdout}")
                     logger.error(f"Curl error: {metrics_test.stderr}")
                     raise RuntimeError(f"DCGM Exporter metrics endpoint not responding on {node}")
+        
+        # Cleanup: Remove cloned repository (binary and config are already installed)
+        logger.info("Cleaning up temporary files...")
+        self.ssh_command(
+            node,
+            "rm -rf /opt/dcgm-exporter-deployment/dcgm-exporter",
+            check=False  # Don't fail if already removed
+        )
+        logger.info("✓ Temporary repository removed")
         
         logger.info(f"✓ Successfully deployed DCGM exporter to {node}")
     
