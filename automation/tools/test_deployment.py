@@ -28,9 +28,10 @@ class Colors:
 
 class TestResult:
     """Test result container"""
-    def __init__(self, name: str, passed: bool, message: str, details: str = ""):
+    def __init__(self, name: str, passed: bool, message: str, details: str = "", warning: bool = False):
         self.name = name
         self.passed = passed
+        self.warning = warning
         self.message = message
         self.details = details
         self.timestamp = datetime.now()
@@ -82,13 +83,16 @@ class DCGMExporterTester:
         except Exception as e:
             return -1, "", str(e)
     
-    def add_result(self, name: str, passed: bool, message: str, details: str = ""):
+    def add_result(self, name: str, passed: bool, message: str, details: str = "", warning: bool = False):
         """Add test result"""
-        result = TestResult(name, passed, message, details)
+        result = TestResult(name, passed, message, details, warning)
         self.results.append(result)
         
         # Print result immediately
-        status = f"{Colors.GREEN}✓ PASS{Colors.END}" if passed else f"{Colors.RED}✗ FAIL{Colors.END}"
+        if warning:
+            status = f"{Colors.YELLOW}⚠ WARN{Colors.END}"
+        else:
+            status = f"{Colors.GREEN}✓ PASS{Colors.END}" if passed else f"{Colors.RED}✗ FAIL{Colors.END}"
         print(f"{status} {name}: {message}")
         if details and not passed:
             print(f"      {details}")
@@ -463,7 +467,8 @@ class DCGMExporterTester:
         self.add_result(
             "Sample job test",
             True,
-            "Skipped - run manually with: srun --gpus=1 nvidia-smi"
+            "Skipped - run manually with: srun --gpus=1 nvidia-smi",
+            warning=True
         )
         
         return True
@@ -548,8 +553,9 @@ class DCGMExporterTester:
     
     def print_summary(self):
         """Print test summary"""
-        passed = sum(1 for r in self.results if r.passed)
+        passed = sum(1 for r in self.results if r.passed and not r.warning)
         failed = sum(1 for r in self.results if not r.passed)
+        warnings = sum(1 for r in self.results if r.warning)
         total = len(self.results)
         
         print(f"\n{Colors.BOLD}{Colors.BLUE}{'='*70}{Colors.END}")
@@ -558,6 +564,8 @@ class DCGMExporterTester:
         
         print(f"\nTotal tests: {total}")
         print(f"{Colors.GREEN}Passed: {passed}{Colors.END}")
+        if warnings > 0:
+            print(f"{Colors.YELLOW}Warnings: {warnings}{Colors.END}")
         if failed > 0:
             print(f"{Colors.RED}Failed: {failed}{Colors.END}")
         
@@ -565,6 +573,12 @@ class DCGMExporterTester:
             print(f"\n{Colors.RED}{Colors.BOLD}Failed Tests:{Colors.END}")
             for result in self.results:
                 if not result.passed:
+                    print(f"  • {result.name}: {result.message}")
+        
+        if warnings > 0:
+            print(f"\n{Colors.YELLOW}{Colors.BOLD}Warnings:{Colors.END}")
+            for result in self.results:
+                if result.warning:
                     print(f"  • {result.name}: {result.message}")
         
         print(f"\n{Colors.BOLD}Overall Result: ", end="")
