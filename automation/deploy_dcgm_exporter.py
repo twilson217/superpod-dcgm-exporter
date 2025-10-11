@@ -308,25 +308,47 @@ class DCGMExporterDeployer:
         logger.info("Retrieving BCM admin certificates...")
         bcm_headnode = bcm_headnodes[0]
         
-        # Copy certificates from BCM headnode to local temp
-        cert_path = "/root/admin.pem"
-        key_path = "/root/admin.key"
+        # Try multiple possible certificate locations
+        cert_locations = [
+            ("/root/.cm/admin.pem", "/root/.cm/admin.key"),  # BCM default location
+            ("/root/admin.pem", "/root/admin.key"),          # Alternative location
+        ]
         
-        try:
-            subprocess.run(
-                ["scp", "-o", "StrictHostKeyChecking=no", 
-                 f"{bcm_headnode}:{cert_path}", "/tmp/admin.pem"],
-                check=True, capture_output=True
-            )
-            subprocess.run(
-                ["scp", "-o", "StrictHostKeyChecking=no",
-                 f"{bcm_headnode}:{key_path}", "/tmp/admin.key"],
-                check=True, capture_output=True
-            )
-            logger.info("✓ Retrieved BCM admin certificates")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to retrieve BCM certificates: {e}")
-            logger.error("Make sure /root/admin.pem and /root/admin.key exist on BCM headnode")
+        cert_found = False
+        for cert_path, key_path in cert_locations:
+            try:
+                # Test if certificates exist
+                result = self.ssh_command(
+                    bcm_headnode, 
+                    f"test -f {cert_path} && test -f {key_path} && echo 'exists'",
+                    check=False
+                )
+                
+                if result.returncode == 0 and "exists" in result.stdout:
+                    logger.info(f"Found certificates at: {cert_path}, {key_path}")
+                    
+                    # Copy certificates from BCM headnode to local temp
+                    subprocess.run(
+                        ["scp", "-o", "StrictHostKeyChecking=no", 
+                         f"{bcm_headnode}:{cert_path}", "/tmp/admin.pem"],
+                        check=True, capture_output=True
+                    )
+                    subprocess.run(
+                        ["scp", "-o", "StrictHostKeyChecking=no",
+                         f"{bcm_headnode}:{key_path}", "/tmp/admin.key"],
+                        check=True, capture_output=True
+                    )
+                    logger.info("✓ Retrieved BCM admin certificates")
+                    cert_found = True
+                    break
+            except subprocess.CalledProcessError:
+                continue
+        
+        if not cert_found:
+            logger.error("Failed to retrieve BCM certificates from any known location")
+            logger.error("Tried locations:")
+            for cert_path, key_path in cert_locations:
+                logger.error(f"  - {cert_path} / {key_path}")
             return
         
         # Deploy to each DGX node
