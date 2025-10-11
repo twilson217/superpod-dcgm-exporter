@@ -313,9 +313,12 @@ case $MODE in
         python automation/deploy_dcgm_exporter.py --config "$CONFIG_FILE" --verbose
         ;;
     2)
-        echo "Running in dry-run mode..."
-        echo "Note: Dry-run mode generates commands without executing."
-        echo "See docs/How-To-Guide.md for manual deployment steps."
+        echo "Documentation mode selected."
+        echo ""
+        echo "For manual deployment instructions, see: docs/How-To-Guide.md"
+        echo "For project overview, see: README.md"
+        echo ""
+        echo "No changes will be made to your system."
         exit 0
         ;;
     3)
