@@ -479,7 +479,7 @@ class DCGMExporterTester:
             # Check if service exists
             returncode, stdout, stderr = self.ssh_command(
                 node,
-                "systemctl list-unit-files | grep -c bcm-role-monitor"
+                "systemctl list-unit-files | grep -c bcm-role-monitor-dcgm"
             )
             
             if returncode == 0 and int(stdout.strip()) > 0:
@@ -488,7 +488,7 @@ class DCGMExporterTester:
                 # Check service status
                 returncode, stdout, stderr = self.ssh_command(
                     node,
-                    "systemctl is-active bcm-role-monitor"
+                    "systemctl is-active bcm-role-monitor-dcgm"
                 )
                 
                 is_active = stdout.strip() == "active"
