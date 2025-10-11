@@ -722,6 +722,8 @@ provisioning = /etc/grafana/provisioning
         try:
             self.copy_file(Path(temp_config), grafana_server, "/tmp/grafana.ini")
             self.ssh_command(grafana_server, "mv /tmp/grafana.ini /etc/grafana/grafana.ini")
+            self.ssh_command(grafana_server, "chown grafana:grafana /etc/grafana/grafana.ini")
+            self.ssh_command(grafana_server, "chmod 640 /etc/grafana/grafana.ini")
             logger.info("✓ Grafana configuration created")
         finally:
             Path(temp_config).unlink()
@@ -747,6 +749,7 @@ datasources:
         try:
             self.ssh_command(grafana_server, "mkdir -p /etc/grafana/provisioning/datasources")
             self.copy_file(Path(temp_datasource), grafana_server, "/etc/grafana/provisioning/datasources/prometheus.yaml")
+            self.ssh_command(grafana_server, "chown -R grafana:grafana /etc/grafana/provisioning/datasources")
             logger.info("✓ Prometheus datasource configured")
         finally:
             Path(temp_datasource).unlink()
@@ -789,6 +792,9 @@ providers:
                 
                 # Copy dashboard
                 self.copy_file(dashboard_source, grafana_server, "/var/lib/grafana/dashboards/dcgm-exporter-dashboard.json")
+                
+                # Fix permissions for Grafana user
+                self.ssh_command(grafana_server, "chown -R grafana:grafana /etc/grafana/provisioning/dashboards")
                 self.ssh_command(grafana_server, "chown -R grafana:grafana /var/lib/grafana/dashboards")
                 
                 logger.info("✓ DCGM dashboard imported")
