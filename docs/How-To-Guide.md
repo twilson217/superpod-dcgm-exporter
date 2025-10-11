@@ -1,85 +1,18 @@
-# DCGM Exporter on SuperPOD - How-To Guide
+# DCGM Exporter on SuperPOD - Manual Deployment Guide
 
-Complete step-by-step guide for deploying DCGM Exporter in BCM-managed SuperPOD environments.
+Step-by-step manual guide for deploying DCGM Exporter in BCM-managed SuperPOD environments without using the automated deployment script.
+
+> **Note**: If you prefer automated deployment, see the main README.md and run `./setup.sh` instead.
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Quick Start](#quick-start)
-3. [Manual Deployment](#manual-deployment)
-4. [Slurm Integration](#slurm-integration)
-5. [BCM Role Monitor Setup](#bcm-role-monitor-setup)
-6. [Prometheus Configuration](#prometheus-configuration)
-7. [Grafana Dashboards](#grafana-dashboards)
-8. [Verification](#verification)
-9. [BCM Imaging Workflow](#bcm-imaging-workflow)
-
-## Prerequisites
-
-### System Requirements
-
-- BCM-managed SuperPOD environment
-- NVIDIA DGX nodes with GPUs
-- Slurm workload manager
-- Linux with systemd
-- Python 3.8+ on deployment machine
-
-### Access Requirements
-
-- Root or sudo access on all nodes
-- Passwordless SSH to all target nodes
-- Access to BCM headnode (for role monitor)
-- BCM admin certificates (for role monitor)
-
-### Network Requirements
-
-- DGX nodes can reach each other
-- Prometheus server can reach DGX nodes on port 9400
-- If using BCM role monitor: DGX nodes can reach BCM headnode on port 8081
-
-## Quick Start
-
-### 1. Clone Repository
-
-```bash
-git clone <repo-url>
-cd superpod-dcgm-exporter
-```
-
-### 2. Run Setup Script
-
-```bash
-./setup.sh
-```
-
-The setup script will:
-- Install `uv` package manager (if needed)
-- Create configuration file (if needed)
-- Launch automated deployment
-
-### 3. Follow Prompts
-
-Answer configuration questions:
-- BCM headnode hostname
-- DGX node list
-- Slurm controller hostname
-- Existing Prometheus (yes/no)
-
-### 4. Select Deployment Mode
-
-1. **Full automated** - Deploy everything automatically
-2. **Dry-run** - Generate documentation only
-3. **Resume** - Continue interrupted deployment
-
-### 5. Verify Deployment
-
-```bash
-# Check service on a DGX node
-ssh dgx-01 "systemctl status dcgm-exporter"
-
-# Test metrics
-curl http://dgx-01:9400/metrics | head -20
-```
+1. [Manual Deployment](#manual-deployment)
+2. [Slurm Integration](#slurm-integration)
+3. [BCM Role Monitor Setup](#bcm-role-monitor-setup)
+4. [Prometheus Configuration](#prometheus-configuration)
+5. [Grafana Dashboards](#grafana-dashboards)
+6. [Verification](#verification)
+7. [BCM Imaging Workflow](#bcm-imaging-workflow)
 
 ## Manual Deployment
 
@@ -109,7 +42,7 @@ make binary
 make install
 
 # Verify installation
-/usr/local/bin/dcgm-exporter --version
+/usr/bin/dcgm-exporter --version
 ls -l /etc/dcgm-exporter/default-counters.csv
 ```
 
