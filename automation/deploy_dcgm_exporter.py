@@ -74,11 +74,22 @@ class DCGMExporterDeployer:
         """Execute command on remote node via SSH"""
         if self.dry_run:
             logger.info(f"[DRY-RUN] ssh {node} '{command}'")
-            # Return a mock successful result for dry-run
+            
+            # Return appropriate mock output based on command
+            mock_stdout = "[dry-run output]"
+            if "systemctl is-active" in command:
+                mock_stdout = "active"
+            elif "which go" in command:
+                mock_stdout = "/usr/bin/go"
+            elif "curl" in command and "metrics" in command:
+                mock_stdout = "DCGM_FI_DEV_GPU_TEMP{gpu=\"0\"} 45.0"
+            elif "systemctl status" in command:
+                mock_stdout = "● dcgm-exporter.service - DCGM Exporter\n   Loaded: loaded\n   Active: active (running)"
+            
             result = subprocess.CompletedProcess(
                 args=["ssh", node, command],
                 returncode=0,
-                stdout="[dry-run output]",
+                stdout=mock_stdout,
                 stderr=""
             )
             return result
