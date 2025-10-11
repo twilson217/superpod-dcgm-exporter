@@ -46,12 +46,16 @@ make install
 ls -l /etc/dcgm-exporter/default-counters.csv
 ```
 
-### Step 2: Create Job Mapping Directory
+### Step 2: Create Required Directories
 
 ```bash
 # Create directory for HPC job mappings
 mkdir -p /run/dcgm-job-map
 chmod 755 /run/dcgm-job-map
+
+# Create working directory for service
+mkdir -p /var/lib/dcgm-exporter
+chmod 755 /var/lib/dcgm-exporter
 ```
 
 ### Step 3: Install Systemd Service
@@ -80,9 +84,30 @@ curl http://dgx-01:9400/metrics | head -50
 
 # Look for DCGM metrics
 curl http://dgx-01:9400/metrics | grep -E "DCGM_FI_DEV_(GPU_TEMP|GPU_UTIL)" | head -10
+
+# Verify metrics with retry (service takes a few seconds to start)
+for i in {1..3}; do
+  if curl -s http://dgx-01:9400/metrics | grep -q "DCGM_FI"; then
+    echo "✓ DCGM metrics available"
+    break
+  else
+    echo "⚠ Waiting for metrics... (attempt $i/3)"
+    sleep 3
+  fi
+done
 ```
 
-### Step 5: Repeat for Other Nodes
+### Step 5: Cleanup Temporary Files (Optional)
+
+```bash
+# Remove temporary build directory to save space (~500 MB)
+ssh dgx-01 "rm -rf /opt/dcgm-exporter-deployment"
+
+# Note: The automated deployment script does this automatically
+# For manual deployments, you may want to keep it for easier updates
+```
+
+### Step 6: Repeat for Other Nodes
 
 ```bash
 # Use a loop for multiple nodes
@@ -155,7 +180,7 @@ ls -l /run/dcgm-job-map/
 cat /run/dcgm-job-map/0  # Should show your job ID
 
 # Check metrics include job label
-curl http://localhost:9400/metrics | grep "hpcjob" | head -5
+curl http://localhost:9400/metrics | grep "hpc_job" | head -5
 
 # Exit the job
 exit
@@ -171,15 +196,27 @@ BCM role monitor automatically manages DCGM exporter service based on BCM role a
 ### Step 1: Get BCM Admin Certificates
 
 ```bash
-# On BCM headnode, locate admin certificates
-ls -l /root/.cm/cmsh/admin.pem
-ls -l /root/.cm/cmsh/admin.key
+# On BCM headnode, locate admin certificates (check common locations)
+ls -l /root/.cm/admin.pem /root/.cm/admin.key     # BCM default location
+# or
+ls -l /root/.cm/cmsh/admin.pem /root/.cm/cmsh/admin.key  # Alternative location
 
-# Copy to deployment machine
-scp bcm-headnode:/root/.cm/cmsh/admin.* .
+# Copy to deployment machine (adjust path as needed)
+scp bcm-headnode:/root/.cm/admin.* .
 ```
 
-### Step 2: Deploy Role Monitor to DGX Nodes
+### Step 2: Create Prometheus Targets Directory
+
+```bash
+# On BCM headnode or node with access to shared storage
+mkdir -p /cm/shared/apps/dcgm-exporter/prometheus-targets
+chmod 755 /cm/shared/apps/dcgm-exporter/prometheus-targets
+
+# Verify
+ls -ld /cm/shared/apps/dcgm-exporter/prometheus-targets
+```
+
+### Step 3: Deploy Role Monitor to DGX Nodes
 
 ```bash
 # Deploy using automation script
@@ -191,20 +228,20 @@ python automation/deploy_dcgm_exporter.py \
   --dgx-nodes dgx-01 dgx-02 dgx-03
 ```
 
-### Step 3: Verify Role Monitor
+### Step 4: Verify Role Monitor
 
 ```bash
 # Check service status
-ssh dgx-01 "systemctl status bcm-role-monitor"
+ssh dgx-01 "systemctl status bcm-role-monitor-dcgm"
 
 # View logs
-ssh dgx-01 "journalctl -u bcm-role-monitor -n 50"
+ssh dgx-01 "journalctl -u bcm-role-monitor-dcgm -n 50"
 
 # Check if node has slurmclient role
 cmsh -c "device; use dgx-01; show roles"
 ```
 
-### Step 4: Test Role Changes
+### Step 5: Test Role Changes
 
 ```bash
 # Add slurmclient role (if not already present)
@@ -212,6 +249,7 @@ cmsh -c "device; use dgx-01; roles; append slurmclient; commit"
 
 # Within 60 seconds, check that services started
 ssh dgx-01 "systemctl status dcgm-exporter"
+ssh dgx-01 "systemctl status bcm-role-monitor-dcgm"
 
 # Check Prometheus target file was created
 ls -l /cm/shared/apps/dcgm-exporter/prometheus-targets/dgx-01.json
@@ -219,8 +257,9 @@ ls -l /cm/shared/apps/dcgm-exporter/prometheus-targets/dgx-01.json
 # Remove role to test cleanup
 cmsh -c "device; use dgx-01; roles; remove slurmclient; commit"
 
-# Within 60 seconds, check that service stopped
+# Within 60 seconds, check that service stopped and target removed
 ssh dgx-01 "systemctl status dcgm-exporter"
+ls /cm/shared/apps/dcgm-exporter/prometheus-targets/dgx-01.json  # Should be gone
 ```
 
 ## Prometheus Configuration
@@ -304,7 +343,7 @@ scrape_configs:
 
 3. **Customize for SuperPOD**
    - Edit panels to filter by `cluster="slurm"`
-   - Add `hpcjob` label to panels showing job-specific metrics
+   - Add `hpc_job` label to panels showing job-specific metrics
    - Save modified dashboard
 
 ### Create Custom Dashboard
@@ -318,7 +357,7 @@ DCGM_FI_DEV_GPU_TEMP{cluster="slurm"}
 Example panel for GPU utilization by job:
 
 ```promql
-avg(DCGM_FI_DEV_GPU_UTIL{cluster="slurm"}) by (hpcjob, hostname)
+avg(DCGM_FI_DEV_GPU_UTIL{cluster="slurm"}) by (hpc_job, hostname)
 ```
 
 ## Verification
@@ -342,7 +381,7 @@ srun --gpus=1 sleep 60 &
 ssh dgx-01 "cat /run/dcgm-job-map/0"
 
 # 5. Job Labels in Metrics
-curl http://dgx-01:9400/metrics | grep hpcjob | head -5
+curl http://dgx-01:9400/metrics | grep hpc_job | head -5
 
 # 6. Prometheus Discovery
 curl 'http://prometheus:9090/api/v1/query?query=up{job="dcgm_exporter"}'
@@ -373,10 +412,10 @@ echo "Running on: $NODE"
 ssh $NODE "cat /run/dcgm-job-map/0"
 
 # 5. Query metrics with job label
-curl "http://$NODE:9400/metrics" | grep "hpcjob=\"$JOBID\""
+curl "http://$NODE:9400/metrics" | grep "hpc_job=\"$JOBID\""
 
 # 6. Query in Prometheus
-curl "http://prometheus:9090/api/v1/query?query=DCGM_FI_DEV_GPU_UTIL{hpcjob=\"$JOBID\"}"
+curl "http://prometheus:9090/api/v1/query?query=DCGM_FI_DEV_GPU_UTIL{hpc_job=\"$JOBID\"}"
 
 # 7. View in Grafana
 # Open dashboard, filter by job ID
