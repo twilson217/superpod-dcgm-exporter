@@ -115,7 +115,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_GPU_UTIL{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_GPU_UTIL{hpc_job=\"$jobid\"}",
           "legendFormat": "{{hostname}} GPU {{gpu}}",
           "refId": "A"
         }
@@ -211,7 +211,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_GPU_TEMP{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_GPU_TEMP{hpc_job=\"$jobid\"}",
           "legendFormat": "{{hostname}} GPU {{gpu}}",
           "refId": "A"
         }
@@ -303,7 +303,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_POWER_USAGE{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_POWER_USAGE{hpc_job=\"$jobid\"}",
           "legendFormat": "{{hostname}} GPU {{gpu}}",
           "refId": "A"
         }
@@ -426,7 +426,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_FB_USED{hpc_job=\"$jobid\"}",
           "legendFormat": "{{hostname}} GPU {{gpu}} Used",
           "refId": "A"
         },
@@ -435,7 +435,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_FB_FREE{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_FB_FREE{hpc_job=\"$jobid\"}",
           "legendFormat": "{{hostname}} GPU {{gpu}} Free",
           "refId": "B"
         }
@@ -529,7 +529,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_MEM_COPY_UTIL{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_MEM_COPY_UTIL{hpc_job=\"$jobid\"}",
           "legendFormat": "{{hostname}} GPU {{gpu}}",
           "refId": "A"
         }
@@ -652,7 +652,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_SM_CLOCK{Slurm_job=\"$jobid\"} * 1000000",
+          "expr": "DCGM_FI_DEV_SM_CLOCK{hpc_job=\"$jobid\"} * 1000000",
           "legendFormat": "{{hostname}} GPU {{gpu}} SM Clock",
           "refId": "A"
         },
@@ -661,7 +661,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_MEM_CLOCK{Slurm_job=\"$jobid\"} * 1000000",
+          "expr": "DCGM_FI_DEV_MEM_CLOCK{hpc_job=\"$jobid\"} * 1000000",
           "legendFormat": "{{hostname}} GPU {{gpu}} Mem Clock",
           "refId": "B"
         }
@@ -783,7 +783,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_GPU_UTIL{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_GPU_UTIL{hpc_job=\"$jobid\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -793,7 +793,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_GPU_TEMP{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_GPU_TEMP{hpc_job=\"$jobid\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -803,7 +803,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_POWER_USAGE{Slurm_job=\"$jobid\"}",
+          "expr": "DCGM_FI_DEV_POWER_USAGE{hpc_job=\"$jobid\"}",
           "format": "table",
           "instant": true,
           "refId": "C"
@@ -813,7 +813,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "DCGM_FI_DEV_FB_USED{Slurm_job=\"$jobid\"} / (1024*1024*1024)",
+          "expr": "DCGM_FI_DEV_FB_USED{hpc_job=\"$jobid\"} / (1024*1024*1024)",
           "format": "table",
           "instant": true,
           "refId": "D"
@@ -839,7 +839,7 @@
               "job": true,
               "modelName": true,
               "pci_bus_id": true,
-              "Slurm_job": true
+              "hpc_job": true
             },
             "indexByName": {
               "hostname": 0,
@@ -946,7 +946,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(DCGM_FI_PROF_GR_ENGINE_ACTIVE{Slurm_job=\"$jobid\"}[1m])",
+          "expr": "rate(DCGM_FI_PROF_GR_ENGINE_ACTIVE{hpc_job=\"$jobid\"}[1m])",
           "legendFormat": "{{hostname}} GPU {{gpu}} Graphics Active",
           "refId": "A"
         }
@@ -1038,7 +1038,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(DCGM_FI_PROF_PCIE_TX_BYTES{Slurm_job=\"$jobid\"}[1m])",
+          "expr": "rate(DCGM_FI_PROF_PCIE_TX_BYTES{hpc_job=\"$jobid\"}[1m])",
           "legendFormat": "{{hostname}} GPU {{gpu}} TX",
           "refId": "A"
         },
@@ -1047,7 +1047,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "rate(DCGM_FI_PROF_PCIE_RX_BYTES{Slurm_job=\"$jobid\"}[1m])",
+          "expr": "rate(DCGM_FI_PROF_PCIE_RX_BYTES{hpc_job=\"$jobid\"}[1m])",
           "legendFormat": "{{hostname}} GPU {{gpu}} RX",
           "refId": "B"
         }

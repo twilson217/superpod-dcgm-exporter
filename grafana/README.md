@@ -73,7 +73,7 @@ You can modify these dashboards:
 All dashboards use DCGM metrics with the following labels:
 - `hostname`: DGX node hostname
 - `gpu`: GPU index (0-7 for DGX A100)
-- `Slurm_job`: Slurm job ID (when HPC job mapping is enabled)
+- `hpc_job`: HPC job ID (when HPC job mapping is enabled) - this is DCGM exporter's standard label
 - `UUID`: GPU UUID
 - `device`: GPU device name
 
