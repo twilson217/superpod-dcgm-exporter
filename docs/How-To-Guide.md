@@ -445,10 +445,6 @@ BCM's imaging system allows you to capture the software configuration of a repre
 Before deploying and capturing a new image, clone the existing software image to avoid overwriting it:
 
 ```bash
-# Load cmsh module
-source /etc/profile.d/modules.sh
-module load cmsh
-
 # Clone the current software image
 cmsh -c "softwareimage;clone <current-image> <new-image>"
 ```
@@ -476,10 +472,6 @@ curl http://dgx-01:9400/metrics | grep hpc_job
 Once verified, capture the node's software image:
 
 ```bash
-# Load cmsh module
-source /etc/profile.d/modules.sh
-module load cmsh
-
 # Capture image from dgx-01
 cmsh -c 'device; use dgx-01; grabimage -w'
 ```
