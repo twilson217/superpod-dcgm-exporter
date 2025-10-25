@@ -452,20 +452,7 @@ cmsh -c "softwareimage;clone <current-image> <new-image>"
 ### Phase 2: Deploy to Representative Node
 
 Deploy DCGM Exporter to one representative node first:
-
-```bash
-# Deploy to first DGX node
-./setup.sh
-# Select dgx-01 as target
-
-# Verify deployment
-ssh dgx-01 "systemctl status dcgm-exporter"
-ssh dgx-01 "curl -s http://localhost:9400/metrics | head -20"
-
-# Test with actual workload
-srun --nodelist=dgx-01 --gpus=1 nvidia-smi
-curl http://dgx-01:9400/metrics | grep hpc_job
-```
+- By following the instructions earlier in this guide or by running the automation discussed in the README.md
 
 ### Phase 3: Capture Software Image
 
