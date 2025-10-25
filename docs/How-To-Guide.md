@@ -440,7 +440,20 @@ BCM's imaging system allows you to capture the software configuration of a repre
 - `cmsh` module loaded
 - Understanding of BCM categories and software images
 
-### Phase 1: Deploy to Representative Node
+### Phase 1: Clone Existing Image
+
+Before deploying and capturing a new image, clone the existing software image to avoid overwriting it:
+
+```bash
+# Load cmsh module
+source /etc/profile.d/modules.sh
+module load cmsh
+
+# Clone the current software image
+cmsh -c "softwareimage;clone <current-image> <new-image>"
+```
+
+### Phase 2: Deploy to Representative Node
 
 Deploy DCGM Exporter to one representative node first:
 
@@ -458,7 +471,7 @@ srun --nodelist=dgx-01 --gpus=1 nvidia-smi
 curl http://dgx-01:9400/metrics | grep hpc_job
 ```
 
-### Phase 2: Capture Software Image
+### Phase 3: Capture Software Image
 
 Once verified, capture the node's software image:
 
@@ -472,70 +485,21 @@ cmsh -c 'device; use dgx-01; grabimage -w'
 ```
 
 **What `grabimage -w` does:**
-- Creates a snapshot of the node's software configuration
-- Stores as a software image named after the node (e.g., "dgx-01")
+- Copies the node as a BCM software image
+- Overwrites the software image currently assigned to that node (so, make sure to clone first if you don't want to overwrite the old image)
 - Includes all installed packages, services, and configurations
-- `-w` flag waits for completion
+- `-w` flag means "write." without it the command will run as dry-run only.
 
-**Expected Output:**
-```
-Grabbing image for dgx-01...
-Image successfully grabbed.
-Software image 'dgx-01' is now available for deployment.
-```
-
-### Phase 3: Verify Image Contents
-
-```bash
-# List available software images
-cmsh -c 'softwareimage; list'
-
-# View details of captured image
-cmsh -c 'softwareimage; use dgx-01; show'
-
-# Check image includes dcgm components
-cmsh -c 'softwareimage; use dgx-01; show packages' | grep dcgm
-```
 
 ### Phase 4: Deploy Image to Additional Nodes
 
-#### Option 1: Deploy to Individual Nodes
-
-```bash
-# Set software image for dgx-02
-cmsh -c 'device; use dgx-02; set softwareimage dgx-01; commit'
-
-# Reboot node to apply image
-cmsh -c 'device; use dgx-02; reboot'
-
-# Wait for node to come back up
-sleep 60
-cmsh -c 'device; use dgx-02; power'
-
-# Verify
-ssh dgx-02 "systemctl status dcgm-exporter"
-```
-
-#### Option 2: Deploy to Multiple Nodes via Category
+#### Deploy to Multiple Nodes via Category
 
 ```bash
 # Deploy to all DGX nodes in a category
-cmsh -c 'category; use dgx; set softwareimage dgx-01; commit'
-
-# Reboot all nodes in category
-cmsh -c 'category; use dgx; foreach -c "reboot"'
+cmsh -c 'category; use <current-category>; set softwareimage <new-image>; commit'
 ```
-
-#### Option 3: Deploy to Specific List
-
-```bash
-# Deploy to specific nodes
-for node in dgx-02 dgx-03 dgx-04; do
-  echo "Deploying to $node..."
-  cmsh -c "device; use $node; set softwareimage dgx-01; commit"
-  cmsh -c "device; use $node; reboot"
-done
-```
+Note: Reboot each node for new image to take effect
 
 ### Phase 5: Post-Deployment Verification
 
