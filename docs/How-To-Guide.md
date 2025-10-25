@@ -568,33 +568,6 @@ ls -la /cm/shared/apps/slurm/var/cm/epilog-dcgm.sh
 4. **Rolling updates** - Image a few nodes at a time, not all at once
 5. **Backup configurations** - Save your `config.json` before major changes
 
-### Updating Deployed Nodes
-
-To update DCGM Exporter on all nodes:
-
-```bash
-# 1. Re-deploy to reference node (dgx-01) with latest version
-./setup.sh
-# Select only dgx-01 as target
-
-# This will automatically:
-# - Clone latest dcgm-exporter from GitHub
-# - Build and install the updated version
-# - Restart the service
-# - Clean up temporary files
-
-# 2. Verify update
-ssh dgx-01 "dcgm-exporter --version"
-ssh dgx-01 "systemctl status dcgm-exporter"
-
-# 3. Capture new image
-cmsh -c 'device; use dgx-01; grabimage -w'
-
-# 4. Deploy to other nodes
-cmsh -c 'category; use dgx; set softwareimage dgx-01; commit'
-cmsh -c 'category; use dgx; foreach -c "reboot"'
-```
-
 ## Next Steps
 
 1. **Monitor**: Check Grafana dashboards regularly
